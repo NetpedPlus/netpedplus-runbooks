@@ -1,0 +1,1633 @@
+# Runbook = ชุดคำสั่ง "ตรวจอย่างเดียว" (ไม่แก้ค่าอุปกรณ์) ตามอาการ แยกตามภาษาคำสั่งของแต่ละยี่ห้อ
+#
+# เพิ่ม/แก้ของตัวเองได้โดยสร้างไฟล์ runbooks.yaml ข้างโปรแกรม (โครงสร้างเดียวกัน id เดียวกันจะแทนที่ของเดิม)
+# {interface} {peer} {dst} {vlan} คือพารามิเตอร์ที่ผู้ใช้กรอก ถ้าไม่กรอก คำสั่งที่ใช้พารามิเตอร์นั้นจะถูกข้าม
+# โปรแกรมตรวจทุกคำสั่งว่าเป็นการอ่านค่า (show/display/get/ping ที่จำกัดจำนวนครั้ง) ถ้าเป็นคำสั่งแก้ค่าจะไม่ถูกโหลด
+#
+# หมายเหตุ: คำสั่งเขียนจากความรู้เรื่อง CLI ของแต่ละยี่ห้อ ยังไม่ได้ยืนยันกับอุปกรณ์จริงทุกรุ่น
+# คำสั่งที่ต่างกันตามเวอร์ชันใส่ไว้ทั้งสองแบบ (เช่น IOS 15 / IOS-XE 16+, FortiOS 6.2 / 6.4+) เครื่องที่ไม่รองรับแบบไหนจะแสดง ⚠ และข้ามได้ครั้งต่อไป
+#
+# ฟิลด์เสริม (ไม่บังคับ): title_en / summary_en, causes = สาเหตุที่พบบ่อย (เรียงจากเจอบ่อยไปน้อย) จากเอกสารผู้ผลิตและกระทู้ชุมชน
+#   เขียนสรุปใหม่ ไม่ได้คัดลอกเนื้อหา, notes = ข้อควรรู้ตามเวอร์ชัน, refs = แหล่งอ้างอิง, search = คำค้นสำหรับปุ่มค้นหาในชุมชน
+# pack_version: วันที่ของชุดคู่มือ (ใช้ตอนอัปเดตชุดคู่มือ)
+
+pack_version: '2026.10.12'
+
+runbooks:
+- id: ospf-neighbor
+  title: OSPF neighbor ไม่ขึ้น / ค้าง
+  title_en: OSPF neighbor not coming up / stuck
+  summary: ดูสถานะ neighbor, interface ที่เปิด OSPF, timer/MTU/area, config และ log ของแต่ละเครื่อง
+  summary_en: Neighbor state, OSPF-enabled interfaces, timers/MTU/area, config and logs on each device
+  params:
+  - key: interface
+    label: Interface ที่ต่อกับเพื่อนบ้าน (ไม่บังคับ)
+    kind: interface
+    hint: เช่น Gi0/1, Ethernet1/1, ge-0/0/1
+  question: OSPF neighbor ไม่ขึ้นเป็น FULL เทียบผลของทุกเครื่อง หา area, network type, timer (hello/dead), MTU, authentication ที่ไม่ตรงกัน แล้วบอกสาเหตุที่น่าจะเป็นที่สุดพร้อมคำสั่งยืนยันขั้นต่อไป
+  question_en: The OSPF neighbor is not reaching FULL. Compare the results of all devices and find mismatched area, network type, timers (hello/dead), MTU and authentication, then give the most likely cause with the next confirming command.
+  causes:
+  - th: 'MTU สองฝั่งไม่เท่ากัน: ค้างที่ EXSTART/EXCHANGE (เจอบ่อยสุดในกระทู้) ดู MTU ของ interface ทั้งสองฝั่ง'
+    en: 'MTU mismatch: stuck in EXSTART/EXCHANGE (the most common community case); compare interface MTU on both ends'
+  - th: 'area ID, network type (broadcast/point-to-point) หรือ hello/dead timer ไม่ตรงกัน: neighbor ไม่โผล่เลยหรือค้าง INIT'
+    en: 'Area ID, network type (broadcast/point-to-point) or hello/dead timers differ: neighbor never appears or stays INIT'
+  - th: 'authentication (type หรือ key) ไม่ตรงกัน: ดู log ว่ามี mismatch authentication'
+    en: 'Authentication type or key mismatch: look for authentication mismatch in the logs'
+  - th: interface เป็น passive-interface หรือไม่ได้ถูกใส่ใน network/area statement
+    en: Interface is passive or not covered by a network/area statement
+  - th: 'router-id ซ้ำกันในโดเมน: neighbor ขึ้นลงหรือ LSA วน'
+    en: 'Duplicate router-ID in the domain: neighbors flap or LSAs churn'
+  - th: ACL / firewall policy บล็อก protocol 89 หรือ multicast 224.0.0.5/6 (โดยเฉพาะผ่าน firewall หรือ tunnel)
+    en: ACL / firewall policy blocks protocol 89 or multicast 224.0.0.5/6 (especially through firewalls or tunnels)
+  refs:
+  - title: 'Cisco: What Does the OSPF Neighbor States Mean / EXSTART-EXCHANGE (MTU)'
+    url: https://www.cisco.com/c/en/us/support/docs/ip/open-shortest-path-first-ospf/13684-12.html
+  - title: 'Huawei: OSPF peer status abnormal (troubleshooting flow)'
+    url: https://info.support.huawei.com/network/ptmngsys/Web/tsrev_ar/en/content/ar/17_edesk_ospf_peer_status_abnormal/edesk_ospf_peer_status_abnormal_edesk001.html
+  - title: 'H3C: OSPF neighbor establishment failure troubleshooting'
+    url: https://knowledge.h3c.com/Theme/details/192362
+  - title: 'Cisco Community: OSPF adjacency not forming'
+    url: https://community.cisco.com/t5/switching/ospf-adjacency-not-forming/m-p/3876483/highlight/true
+  search: OSPF neighbor stuck EXSTART EXCHANGE INIT not forming adjacency
+  commands:
+    cisco_ios:
+    - show ip ospf neighbor
+    - show ip ospf interface brief
+    - show ip ospf interface {interface}
+    - show interfaces {interface}
+    - show ip protocols | section ospf
+    - show running-config | section router ospf
+    - show logging | include OSPF
+    nxos:
+    - show ip ospf neighbors
+    - show ip ospf interface brief
+    - show ip ospf interface {interface}
+    - show interface {interface}
+    - show running-config ospf
+    - show logging logfile | include OSPF
+    eos:
+    - show ip ospf neighbor
+    - show ip ospf interface brief
+    - show ip ospf interface {interface}
+    - show interfaces {interface}
+    - show running-config section ospf
+    - show logging | include OSPF
+    junos:
+    - show ospf neighbor
+    - show ospf interface
+    - show ospf interface {interface} detail
+    - show interfaces {interface} extensive
+    - show configuration protocols ospf
+    - show log messages | match OSPF
+    huawei:
+    - display ospf peer
+    - display ospf interface
+    - display ospf error
+    - display interface {interface}
+    - display logbuffer | include OSPF
+    comware:
+    - display ospf peer
+    - display ospf interface
+    - display interface {interface}
+    - display logbuffer | include OSPF
+    aoscx:
+    - show ip ospf neighbors
+    - show ip ospf interface
+    - show ip ospf interface {interface}
+    - show interface {interface}
+    fortios:
+    - get router info ospf neighbor
+    - get router info ospf interface
+    - get router info ospf status
+    - show router ospf
+    ros:
+    - /routing ospf neighbor print
+    - /routing ospf interface-template print
+    - /routing ospf instance print
+    asa:
+    - show ospf neighbor
+    - show ospf interface
+    - show interface {interface}
+    - show running-config router ospf
+    - show logging | include OSPF
+    panos:
+    - show routing protocol ospf neighbor
+    - show routing protocol ospf interface
+- id: bgp-neighbor
+  title: BGP neighbor ไม่ Established
+  title_en: BGP neighbor not Established
+  summary: ดูสถานะ session, เหตุผลที่ล้ม, เส้นทางไปหา peer, ping peer และ config BGP
+  summary_en: Session state, last reset reason, route to the peer, ping the peer and the BGP config
+  params:
+  - key: peer
+    label: IP ของ BGP peer (ไม่บังคับ แต่ช่วยได้มาก)
+    kind: ip
+    hint: เช่น 10.0.0.2
+  question: BGP neighbor ไม่ขึ้น Established เทียบผลของทุกเครื่อง ดู state (Idle/Active/Connect/OpenSent), AS number, source interface, ebgp-multihop, authentication และเส้นทางไปหา peer แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: The BGP neighbor is not reaching Established. Compare the results of all devices and look at the state (Idle/Active/Connect/OpenSent), AS number, source interface, ebgp-multihop, authentication and the path to the peer, then give the most likely cause.
+  causes:
+  - th: 'ค้าง Active/Idle เพราะไปหา peer ไม่ถึง: ไม่มี route ไป IP ของ peer หรือใช้ source interface/loopback ผิด (update-source)'
+    en: 'Stuck Active/Idle because the peer is unreachable: no route to the peer IP or the wrong source/loopback (update-source)'
+  - th: remote-as ไม่ตรง หรือ peer ตั้งค่า neighbor IP ไม่ตรงกับ IP ที่เราใช้เชื่อมต่อ
+    en: remote-as mismatch, or the peer has a neighbor IP that doesn't match the source we connect from
+  - th: eBGP ผ่านหลาย hop (loopback) แต่ไม่ได้ตั้ง ebgp-multihop / TTL
+    en: eBGP over loopbacks without ebgp-multihop / TTL
+  - th: 'MD5 password ไม่ตรงกัน: log ขึ้น ''No MD5 digest'' / ''Invalid MD5'''
+    en: 'MD5 password mismatch: logs show ''No MD5 digest'' / ''Invalid MD5'''
+  - th: TCP 179 ถูก ACL / firewall / control-plane policy บล็อก
+    en: TCP 179 blocked by an ACL, firewall or control-plane policy
+  - th: 'ขึ้นแล้วหลุดซ้ำ: maximum-prefix เกิน, hold timer หมดเพราะ CPU สูงหรือ MTU ของ path ทำให้ update ใหญ่ส่งไม่ผ่าน'
+    en: 'Comes up then drops: maximum-prefix exceeded, hold timer expiry from high CPU, or path MTU blocking large updates'
+  refs:
+  - title: 'Cisco: Troubleshoot BGP neighbor issues (states Idle/Active)'
+    url: https://www3-realm.cisco.com/en/US/tech/tk365/technologies_tech_note09186a008009478a.shtml
+  - title: 'Juniper: Verify BGP peer sessions'
+    url: https://juniper.net/documentation/en_US/junos13.1/topics/task/verification/bgpp-layer-sessions.html
+  - title: 'AfNOG: BGP troubleshooting (PDF)'
+    url: https://bgp4all.com/pfs/_media/conferences/afnog2003-bgp-troubleshooting.pdf
+  search: BGP neighbor stuck Active Idle not established
+  commands:
+    cisco_ios:
+    - show ip bgp summary
+    - show ip bgp neighbors {peer}
+    - show ip route {peer}
+    - ping {peer} repeat 3
+    - show running-config | section router bgp
+    - show logging | include BGP
+    nxos:
+    - show ip bgp summary
+    - show ip bgp neighbors {peer}
+    - show ip route {peer}
+    - ping {peer} count 3
+    - show running-config bgp
+    - show logging logfile | include BGP
+    eos:
+    - show ip bgp summary
+    - show ip bgp neighbors {peer}
+    - show ip route {peer}
+    - ping {peer} repeat 3
+    - show running-config section bgp
+    - show logging | include BGP
+    junos:
+    - show bgp summary
+    - show bgp neighbor {peer}
+    - show route {peer}
+    - ping {peer} count 3
+    - show configuration protocols bgp
+    - show log messages | match BGP
+    huawei:
+    - display bgp peer
+    - display bgp peer {peer} verbose
+    - display ip routing-table {peer}
+    - ping -c 3 {peer}
+    - display logbuffer | include BGP
+    aoscx:
+    - show bgp ipv4 unicast summary
+    - show bgp ipv4 unicast neighbors {peer}
+    - show ip route {peer}
+    - ping {peer} repetitions 3
+    fortios:
+    - get router info bgp summary
+    - get router info bgp neighbors {peer}
+    - get router info routing-table details {peer}
+    - execute ping {peer}
+    ros:
+    - /routing bgp session print
+    - /routing bgp connection print
+    - /ping {peer} count=3
+    asa:
+    - show bgp summary
+    - show bgp neighbors {peer}
+    - show route {peer}
+    - ping {peer}
+    - show running-config router bgp
+    panos:
+    - show routing protocol bgp summary
+    - show routing protocol bgp peer
+- id: interface-problem
+  title: Interface down / flap / error
+  title_en: Interface down / flapping / errors
+  summary: ดูสถานะพอร์ต, ตัวนับ error, err-disable, config ของพอร์ตนั้น และ log การขึ้นลง
+  summary_en: Port status, error counters, err-disable, the port's config and up/down logs
+  params:
+  - key: interface
+    label: Interface ที่มีปัญหา (ไม่บังคับ)
+    kind: interface
+    hint: เช่น Gi0/1, Ethernet1/1, ge-0/0/1
+  question: Interface มีปัญหา (down / flap / error) ดูสถานะ, error counter (CRC/input errors), duplex/speed, err-disable, และ log เทียบสองฝั่งของลิงก์ แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: An interface has a problem (down / flap / error). Look at its status, error counters (CRC/input errors), duplex/speed, err-disable and logs, compare both ends of the link, then give the most likely cause.
+  causes:
+  - th: 'CRC / input errors เพิ่มต่อเนื่อง: สายเสีย, หัว RJ45/fiber สกปรก หรือ SFP มีปัญหา ดูค่าแสงด้วยอาการ ''ค่าแสง / SFP'''
+    en: 'CRC / input errors keep rising: bad cable, dirty RJ45/fiber connector or a failing SFP; check light levels with the ''optics / SFP'' runbook'
+  - th: 'speed/duplex ไม่ตรงกัน (ฝั่งหนึ่ง fix อีกฝั่ง auto): late collision, half-duplex'
+    en: 'Speed/duplex mismatch (one side fixed, the other auto): late collisions, half-duplex'
+  - th: 'err-disabled จาก BPDU guard, port-security, storm-control, UDLD หรือ link-flap: ดูเหตุผลใน err-disabled'
+    en: err-disabled by BPDU guard, port-security, storm-control, UDLD or link-flap; read the reason in the err-disabled list
+  - th: 'ลิงก์ขึ้นลงตามรอบ: ปลายทางรีบูต/ประหยัดไฟ (EEE), PoE ไม่พอ หรือ keepalive/UDLD ของสองฝั่งไม่ตรง'
+    en: 'Link flaps periodically: the far end reboots or uses power saving (EEE), insufficient PoE, or mismatched keepalive/UDLD'
+  - th: SFP ไม่รองรับ (third-party) หรือ speed ของ SFP กับพอร์ตไม่ตรงกัน
+    en: Unsupported (third-party) SFP or SFP speed not matching the port
+  refs:
+  - title: 'Cisco Community: Digital Optical Monitoring (DOM)'
+    url: https://supportforums.cisco.com/document/75181/digital-optical-monitoring-dom
+  search: interface flapping CRC input errors err-disabled
+  commands:
+    cisco_ios:
+    - show ip interface brief
+    - show interfaces status
+    - show interfaces status err-disabled
+    - show interfaces {interface}
+    - show interfaces {interface} counters errors
+    - show running-config interface {interface}
+    - show logging | include (LINK|LINEPROTO|ERR_DISABLE|DUPLEX)
+    - show interfaces {interface} transceiver detail
+    nxos:
+    - show interface brief
+    - show interface status err-disabled
+    - show interface {interface}
+    - show interface {interface} counters errors
+    - show running-config interface {interface}
+    - show logging logfile | include (UPDOWN|ETHPM|ERR)
+    - show interface {interface} transceiver details
+    eos:
+    - show interfaces status
+    - show interfaces status errdisabled
+    - show interfaces {interface}
+    - show interfaces {interface} counters errors
+    - show running-config interfaces {interface}
+    - show logging | include (LINK|LINEPROTO|ETH)
+    - show interfaces {interface} transceiver
+    junos:
+    - show interfaces terse
+    - show interfaces {interface} extensive
+    - show interfaces diagnostics optics {interface}
+    - show configuration interfaces {interface}
+    - show log messages | match (UPDOWN|LINK|IFD)
+    huawei:
+    - display interface brief
+    - display interface {interface}
+    - display current-configuration interface {interface}
+    - display logbuffer | include (UPDOWN|LINK)
+    - display transceiver interface {interface} verbose
+    comware:
+    - display interface brief
+    - display interface {interface}
+    - display current-configuration interface {interface}
+    - display logbuffer | include (UPDOWN|LINK)
+    - display transceiver diagnosis interface {interface}
+    aoscx:
+    - show interface brief
+    - show interface {interface}
+    - show running-config interface {interface}
+    - show interface {interface} transceiver detail
+    fortios:
+    - get system interface physical
+    - diagnose netlink interface list {interface}
+    - show system interface {interface}
+    - get system interface transceiver
+    ros:
+    - /interface print
+    - /interface print stats
+    - /interface ethernet monitor {interface} once
+    asa:
+    - show interface ip brief
+    - show interface {interface}
+    - show running-config interface {interface}
+    panos:
+    - show interface all
+    - show interface {interface}
+    sonicos:
+    - show interfaces
+    - show zones
+- id: l2-vlan-stp
+  title: VLAN / trunk / STP (ชั้น L2 ไม่ผ่านหรือวน)
+  title_en: VLAN / trunk / STP (L2 not passing or looping)
+  summary: ดู VLAN ที่มี, trunk, ตาราง MAC, สถานะ spanning-tree ของ VLAN ที่สงสัย
+  summary_en: VLANs, trunks, MAC table and spanning-tree state of the suspect VLAN
+  params:
+  - key: vlan
+    label: VLAN ID ที่สงสัย (ไม่บังคับ)
+    kind: vlan
+    hint: เช่น 10
+  - key: interface
+    label: Interface ที่สงสัย (ไม่บังคับ)
+    kind: interface
+    hint: เช่น Gi1/0/24
+  question: ปัญหาชั้น L2 (VLAN ไม่ผ่าน / trunk / STP) เทียบผลของทุกเครื่อง ดู VLAN ที่อนุญาตบน trunk, native VLAN, MAC ที่เรียนได้, root bridge และพอร์ตที่ block แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: There is a layer 2 problem (VLAN not passing / trunk / STP). Compare the results of all devices and look at the VLANs allowed on the trunk, native VLAN, learned MACs, root bridge and blocked ports, then give the most likely cause.
+  causes:
+  - th: VLAN ไม่ได้อยู่ใน allowed list ของ trunk ฝั่งใดฝั่งหนึ่ง หรือยังไม่ได้สร้าง VLAN บน switch ตัวกลาง
+    en: VLAN missing from the trunk allowed list on one side, or not created on a switch in the middle
+  - th: native VLAN ไม่ตรงกันสองฝั่ง (CDP แจ้ง native VLAN mismatch)
+    en: Native VLAN mismatch between ends (CDP reports native VLAN mismatch)
+  - th: พอร์ตถูก STP block / root bridge ไม่ได้อยู่ที่ core ตามที่ออกแบบ (priority ไม่ได้ตั้ง)
+    en: Port blocked by STP / root bridge not at the intended core (priority not set)
+  - th: ต่างยี่ห้อใช้ STP คนละโหมด (PVST+ กับ MSTP) หรือ MST region (name/revision/instance mapping) ไม่ตรงกัน
+    en: Mixed vendors running different STP modes (PVST+ vs MSTP) or MST region name/revision/VLAN mapping mismatch
+  - th: 'loop จากการต่อสายวน / switch เล็กใต้โต๊ะ: MAC flapping และ topology change ถี่ ดูอาการ ''STP topology change ถี่'''
+    en: 'Loop from a cabling mistake / small desk switch: MAC flapping and frequent topology changes; see the ''frequent STP topology changes'' runbook'
+  refs:
+  - title: 'Cisco: Troubleshoot STP issues on Catalyst switches'
+    url: https://www3-realm.cisco.com/en/US/tech/tk389/tk621/technologies_tech_note09186a0080094797.shtml
+  search: VLAN not passing trunk native VLAN mismatch spanning tree blocking
+  commands:
+    cisco_ios:
+    - show vlan brief
+    - show interfaces trunk
+    - show vlan id {vlan}
+    - show mac address-table vlan {vlan}
+    - show spanning-tree vlan {vlan}
+    - show spanning-tree summary
+    - show interfaces {interface} switchport
+    - show spanning-tree mst configuration
+    - show cdp neighbors detail | include (Device ID|Native VLAN)
+    nxos:
+    - show vlan brief
+    - show interface trunk
+    - show vlan id {vlan}
+    - show mac address-table vlan {vlan}
+    - show spanning-tree vlan {vlan}
+    - show spanning-tree summary
+    - show interface {interface} switchport
+    eos:
+    - show vlan
+    - show interfaces trunk
+    - show mac address-table vlan {vlan}
+    - show spanning-tree vlan {vlan}
+    - show spanning-tree
+    - show interfaces {interface} switchport
+    junos:
+    - show vlans
+    - show ethernet-switching table
+    - show spanning-tree bridge
+    huawei:
+    - display vlan
+    - display vlan {vlan}
+    - display mac-address vlan {vlan}
+    - display stp brief
+    - display interface brief
+    - display stp region-configuration
+    comware:
+    - display vlan
+    - display vlan {vlan}
+    - display mac-address vlan {vlan}
+    - display stp brief
+    - display link-aggregation summary
+    - display stp region-configuration
+    aoscx:
+    - show vlan
+    - show vlan {vlan}
+    - show mac-address-table vlan {vlan}
+    - show spanning-tree
+    - show interface brief
+    - show spanning-tree mst-config
+- id: reachability
+  title: ติดต่อปลายทางไม่ได้ (routing / ARP / ping)
+  title_en: Destination unreachable (routing / ARP / ping)
+  summary: ดูว่าเส้นทางไปปลายทางเป็นอย่างไร มี ARP ไหม และ ping จากเครื่องนี้ได้ไหม
+  summary_en: Route to the destination, ARP entry and ping from this device
+  params:
+  - key: dst
+    label: IP ปลายทางที่ไปไม่ถึง
+    kind: ip
+    required: true
+    hint: เช่น 10.20.30.40
+  question: ปลายทางติดต่อไม่ได้ เทียบผลของทุกเครื่องที่อยู่บนเส้นทาง ดู route ที่ใช้, next-hop, ARP/ND, ผลการ ping แล้วบอกว่าเครื่องไหนคือจุดที่ขาดและสาเหตุที่น่าจะเป็น
+  question_en: The destination is unreachable. Compare the results of every device on the path and look at the route used, next-hop, ARP/ND and ping results, then say which device is where the path breaks and the most likely cause.
+  causes:
+  - th: ไม่มี route ไปปลายทาง หรือไปทาง default ผิดเส้น (ขาดการ redistribute / static ชี้ next-hop ผิด)
+    en: No route to the destination, or it follows the wrong default (missing redistribution / static pointing to the wrong next hop)
+  - th: 'ขาไปได้แต่ขากลับไม่ได้ (asymmetric): ปลายทางไม่มี route กลับมา หรือ firewall ทิ้งขากลับเพราะ session ไม่ครบ'
+    en: 'Forward path works but the return doesn''t (asymmetric): no return route, or a firewall drops the return as it never saw the session'
+  - th: 'ARP ไม่ครบ (Incomplete): ปลายทางอยู่คนละ VLAN, ปิด ping หรือ IP ซ้ำ'
+    en: 'ARP incomplete: destination is in another VLAN, blocks ping, or has a duplicate IP'
+  - th: 'ACL / firewall policy / NAT บล็อกกลางทาง: ใช้หน้าจำลองเส้นทางหรืออาการ ''firewall ทิ้ง traffic / NAT'' ต่อ'
+    en: 'An ACL / firewall policy / NAT drops it on the way: continue with the route simulator or the ''firewall drop / NAT'' runbook'
+  refs: []
+  search: destination unreachable routing ARP incomplete
+  commands:
+    cisco_ios:
+    - show ip route {dst}
+    - show ip arp {dst}
+    - ping {dst} repeat 3
+    - show ip cef {dst}
+    nxos:
+    - show ip route {dst}
+    - show ip arp {dst}
+    - ping {dst} count 3
+    eos:
+    - show ip route {dst}
+    - show ip arp {dst}
+    - ping {dst} repeat 3
+    junos:
+    - show route {dst}
+    - show arp no-resolve
+    - ping {dst} count 3
+    huawei:
+    - display ip routing-table {dst}
+    - display arp
+    - ping -c 3 {dst}
+    comware:
+    - display ip routing-table {dst}
+    - display arp
+    - ping -c 3 {dst}
+    aoscx:
+    - show ip route {dst}
+    - show arp
+    - ping {dst} repetitions 3
+    fortios:
+    - get router info routing-table details {dst}
+    - diagnose ip arp list
+    - execute ping {dst}
+    ros:
+    - /ip arp print
+    - /ping {dst} count=3
+    asa:
+    - show route {dst}
+    - show arp
+    - ping {dst}
+    panos:
+    - show routing route
+    - show arp all
+- id: resources
+  title: CPU / Memory สูง หรือเครื่องช้า
+  title_en: High CPU / memory or slow device
+  summary: ดูการใช้ CPU/หน่วยความจำ, process ที่กินทรัพยากร, uptime และ log ที่เกี่ยวข้อง
+  summary_en: CPU/memory usage, top processes, uptime and related logs
+  params: []
+  question: อุปกรณ์ใช้ CPU/Memory สูงหรือช้า ดู process ที่กินทรัพยากร, uptime (รีบูตเองไหม), log ที่ผิดปกติ แล้วบอกสาเหตุที่น่าจะเป็นพร้อมคำสั่งตรวจต่อ
+  question_en: A device has high CPU/memory or is slow. Look at the processes using resources, uptime (did it reboot by itself), and abnormal logs, then give the most likely cause with the next check commands.
+  causes:
+  - th: 'traffic ถูก punt ขึ้น CPU: ARP/broadcast storm, loop, TTL หมด, packet ที่ต้อง process switch (ดู process ที่สูงสุดและ interrupt)'
+    en: 'Traffic punted to the CPU: ARP/broadcast storm, loop, TTL expiry, process-switched packets (check the top process and interrupt load)'
+  - th: SNMP polling / NMS ถี่เกินไป หรือ SSH/HTTPS management ถูกสแกน
+    en: Aggressive SNMP polling / NMS, or management (SSH/HTTPS) being scanned
+  - th: 'FortiGate เข้า conserve mode: memory เกิน 88% (ค่าเริ่มต้น) จาก IPS/WAD/fcnacd หรือ memory leak ในบางเวอร์ชัน (เช่น node ใน 7.4.8/7.6.3)'
+    en: 'FortiGate enters conserve mode: memory above 88% (default) from IPS/WAD/fcnacd, or a memory leak in some builds (e.g. node in 7.4.8/7.6.3)'
+  - th: 'Palo Alto dataplane CPU สูง: session เยอะ, decryption, zone protection/DoS ไม่ได้ตั้ง หรือ traffic ผิดปกติ ดู resource-monitor'
+    en: 'Palo Alto high dataplane CPU: session load, decryption, missing zone protection/DoS, or abnormal traffic; check the resource monitor'
+  - th: 'บั๊กของเวอร์ชัน: ค้นด้วยรุ่นและเวอร์ชันในปุ่มค้นหาในชุมชน แล้วดู release notes / known issues'
+    en: 'Software bug: search with the model and version using the community search buttons, then check release notes / known issues'
+  notes:
+  - th: Cisco IOS-XE 16.x ขึ้นไปมีคำสั่งดู CPU แยก control-plane กับ platform (show processes cpu platform sorted)
+    en: Cisco IOS-XE 16.x+ separates control-plane and platform CPU (show processes cpu platform sorted)
+  refs:
+  - title: 'Cisco: Troubleshoot high CPU usage in Catalyst switches (IOS-XE 16.x)'
+    url: https://www.cisco.com/c/en/us/support/docs/ios-nx-os-software/ios-xe-16/213549-troubleshoot-high-cpu-usage-in-catalyst.html
+  - title: 'Cisco: High CPU on Catalyst 3850'
+    url: https://www.cisco.com/c/en/us/support/docs/switches/catalyst-3850-series-switches/117594-technote-hicpu3850-00.html
+  - title: 'Fortinet: How conserve mode is triggered'
+    url: https://community.fortinet.com/fortigate-3/technical-tip-how-conserve-mode-is-triggered-99971
+  - title: 'Fortinet: Initial troubleshooting of high memory (conserve mode)'
+    url: https://community.fortinet.com/fortigate-3/troubleshooting-tip-how-to-do-initial-troubleshooting-of-high-memory-utilization-issues-conserve-mode-96838
+  - title: 'Fortinet: Conserve mode from node memory leak in 7.4.8 / 7.6.3'
+    url: https://community.fortinet.com/fortigate-3/troubleshooting-tip-conserve-mode-triggered-by-node-process-memory-leak-in-fortios-v7-4-8-and-v7-6-3-213540
+  - title: 'Palo Alto: How to troubleshoot high dataplane CPU'
+    url: https://live.paloaltonetworks.com/t5/Featured-Articles/How-to-Troubleshoot-High-Dataplane-CPU/ta-p/73000
+  search: high CPU memory utilization troubleshooting
+  commands:
+    cisco_ios:
+    - show processes cpu sorted
+    - show processes memory sorted
+    - show memory statistics
+    - show version | include uptime
+    - show logging | include (CPUHOG|MALLOCFAIL|SYS)
+    - show processes cpu platform sorted
+    - show processes cpu history
+    - show platform resources
+    nxos:
+    - show system resources
+    - show processes cpu sort
+    - show processes memory
+    - show logging logfile | include (CPU|MEM)
+    - show system internal processes cpu
+    eos:
+    - show processes top once
+    - show version
+    - show logging | include (CPU|MEM)
+    junos:
+    - show chassis routing-engine
+    - show system uptime
+    - show chassis alarms
+    huawei:
+    - display cpu-usage
+    - display memory-usage
+    - display cpu-usage history
+    comware:
+    - display cpu-usage
+    - display memory
+    - display cpu-usage history
+    aoscx:
+    - show system resource-utilization
+    - show version
+    fortios:
+    - get system performance status
+    - get system status
+    - diagnose hardware sysinfo conserve
+    - diagnose hardware sysinfo memory
+    - diagnose debug crashlog read
+    ros:
+    - /system resource print
+    - /system health print
+    asa:
+    - show cpu usage
+    - show memory
+    - show conn count
+    panos:
+    - show system resources
+    - show system info
+    - show running resource-monitor minute last 5
+    - show session info
+    sfos:
+    - system diagnostics show cpu
+    - system diagnostics show memory
+    - system diagnostics show disk
+    - system diagnostics show version-info
+    sonicos:
+    - show status
+    - show version
+- id: ha-cluster
+  title: HA / cluster ไม่ปกติ (failover, sync)
+  title_en: HA / cluster unhealthy (failover, sync)
+  summary: ดูสถานะ HA ว่าเครื่องไหน active/standby, sync ครบไหม และเหตุที่ failover
+  summary_en: Which unit is active/standby, whether config/session sync is complete, and why it failed over
+  params: []
+  question: HA / cluster ไม่ปกติ เทียบผลของทั้งสองเครื่อง ดูบทบาท (active/standby/primary/secondary), สถานะ sync ของ config และ session, เหตุผลที่ failover ล่าสุด และความต่างของเวอร์ชันหรือ config ระหว่างคู่ แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: HA / cluster is not healthy. Compare the results of both units and look at the roles (active/standby/primary/secondary), config and session sync state, the reason for the latest failover, and version or config differences between the pair, then give the most likely cause.
+  causes:
+  - th: 'config ไม่ sync (checksum ไม่ตรง): แก้ config บนเครื่อง standby โดยตรง, profile ต่างกัน (IPS/AV) หรือ speed auto บนพอร์ต HA'
+    en: 'Config out of sync (checksum mismatch): config changed directly on the standby, differing profiles (IPS/AV), or speed auto on HA ports'
+  - th: เวอร์ชัน firmware / license / รุ่นของสองเครื่องไม่ตรงกัน
+    en: Firmware version, license or model differs between the two units
+  - th: 'heartbeat/HA link หลุดหรือ latency สูง: split-brain (active ทั้งคู่)'
+    en: 'Heartbeat/HA link down or high latency: split-brain (both active)'
+  - th: failover ซ้ำเพราะ monitored interface / path monitoring ขึ้นลง
+    en: Repeated failover because a monitored interface / path monitor flaps
+  - th: หลังอัปเกรด เครื่องรอง checksum ว่างหรือหน้า HA โหลดไม่ขึ้น (FortiGate VM บางเวอร์ชัน)
+    en: After an upgrade the secondary shows an empty checksum or the HA page fails (some FortiGate VM builds)
+  refs:
+  - title: 'Fortinet: HA out of synchronization'
+    url: https://community.fortinet.com/t5/FortiGate/Troubleshooting-Tip-HA-out-of-synchronization/ta-p/273502
+  - title: 'Fortinet: Troubleshooting a checksum mismatch in a FortiGate HA cluster'
+    url: https://community.fortinet.com/fortigate-3/technical-tip-troubleshooting-a-checksum-mismatch-in-a-fortigate-ha-cluster-99096
+  - title: 'Fortinet: HA out of sync due to speed auto'
+    url: https://community.fortinet.com/t5/FortiGate/HA-Out-of-Sync-due-to-speed-auto-in-default-setting/ta-p/312227
+  - title: 'Palo Alto: High Availability configuring and troubleshooting resource list'
+    url: https://live.paloaltonetworks.com/t5/Configuration-Articles/High-availability-resource-list/ta-p/55076
+  search: HA cluster out of sync failover split brain
+  commands:
+    fortios:
+    - get system ha status
+    - diagnose sys ha checksum cluster
+    - diagnose sys ha history read
+    asa:
+    - show failover
+    - show failover history
+    - show running-config failover
+    panos:
+    - show high-availability state
+    - show high-availability all
+    - show high-availability state-synchronization
+    - show high-availability path-monitoring
+    - show high-availability link-monitoring
+    sfos:
+    - system ha show details
+    sonicos:
+    - show high-availability status
+    junos:
+    - show chassis cluster status
+    - show chassis cluster interfaces
+    - show chassis cluster statistics
+    huawei:
+    - display hrp state verbose
+- id: vpn-tunnel
+  title: VPN IPsec ไม่ขึ้น / หลุดบ่อย
+  title_en: IPsec VPN not coming up / dropping
+  summary: ดูสถานะ IKE (เฟส 1) และ IPsec (เฟส 2) ของทุก tunnel พร้อมกรอง peer ที่สงสัย
+  summary_en: IKE (phase 1) and IPsec (phase 2) state of every tunnel, filtered by the suspect peer
+  params:
+  - key: peer
+    label: IP ของ peer ปลายทาง (ไม่บังคับ)
+    kind: ip
+    hint: เช่น 203.0.113.10
+  question: VPN IPsec ไม่ขึ้นหรือหลุดบ่อย เทียบผลของสองฝั่ง ดู phase 1 (IKE) กับ phase 2 (IPsec) ว่าล้มที่ขั้นไหน, proposal/lifetime/PSK/ID ที่ไม่ตรงกัน, traffic selector (subnet) และเส้นทางไปหา peer แล้วบอกสาเหตุที่น่าจะเป็นที่สุดพร้อมคำสั่งยืนยันขั้นต่อไป
+  question_en: IPsec VPN is not coming up or drops often. Compare both sides and look at which step fails between phase 1 (IKE) and phase 2 (IPsec), mismatched proposal/lifetime/PSK/ID, traffic selectors (subnets) and the path to the peer, then give the most likely cause with the next confirming command.
+  causes:
+  - th: 'phase 1 ไม่ขึ้น: PSK, IKE version, proposal (encryption/DH group) หรือ peer ID / local ID ไม่ตรงกัน'
+    en: 'Phase 1 down: PSK, IKE version, proposal (encryption/DH group) or peer/local ID mismatch'
+  - th: 'phase 1 ขึ้นแต่ phase 2 ไม่ขึ้น: traffic selector (subnet local/remote) ไม่ตรงกันสองฝั่ง หรือ PFS ไม่ตรง'
+    en: 'Phase 1 up but phase 2 down: traffic selectors (local/remote subnets) don''t mirror each other, or PFS mismatch'
+  - th: 'phase 2 หลุดหลัง rekey / tunnel flap: lifetime ต่างกัน หรือ DPD ไม่ตรง (FortiGate มีบทความเฉพาะ)'
+    en: 'Phase 2 drops after rekey / tunnel flap: different lifetimes or DPD settings (FortiGate has a dedicated article)'
+  - th: 'NAT-T: มี NAT กลางทาง แต่ UDP 4500/500 ถูกบล็อก หรือ ISP router แปลงพอร์ต'
+    en: 'NAT-T: NAT in the path but UDP 500/4500 blocked or rewritten by the ISP router'
+  - th: 'tunnel ขึ้นแต่ traffic ไม่ผ่าน: ไม่มี route เข้า tunnel, policy/ACL, หรือ NAT ไปแปลง traffic ที่ควรเข้า VPN (ต้อง no-NAT/identity NAT)'
+    en: 'Tunnel up but no traffic: missing route into the tunnel, policy/ACL, or NAT translating traffic that should go into the VPN (needs no-NAT/identity NAT)'
+  refs:
+  - title: 'Fortinet: Phase1 up but phase2 down after IKE rekey or tunnel flap'
+    url: https://community.fortinet.com/fortigate-3/troubleshooting-tip-phase1-is-up-yet-phase2-is-down-after-ike-rekey-or-tunnel-flap-202350
+  - title: 'Fortinet: IPsec related diagnose commands'
+    url: https://www.fortinetguru.com/2019/12/troubleshooting-ipsec-related-diagnose-command/
+  - title: 'Palo Alto LIVEcommunity: IPsec tunnel down'
+    url: https://live.paloaltonetworks.com/t5/next-generation-firewall/ipsec-tunnel-down/td-p/593939
+  - title: 'Palo Alto LIVEcommunity: Trouble with IPSec-SA'
+    url: https://live.paloaltonetworks.com/t5/general-topics/trouble-with-ipsec-sa/td-p/152727
+  search: IPsec VPN phase 1 phase 2 down tunnel
+  commands:
+    cisco_ios:
+    - show crypto isakmp sa
+    - show crypto ikev2 sa
+    - show crypto ipsec sa
+    - show crypto ipsec sa peer {peer}
+    - show ip route {peer}
+    - show crypto session detail
+    asa:
+    - show vpn-sessiondb summary
+    - show vpn-sessiondb l2l
+    - show crypto ikev1 sa
+    - show crypto ikev2 sa
+    - show crypto ipsec sa
+    - show crypto ipsec sa peer {peer}
+    - show route {peer}
+    fortios:
+    - get vpn ipsec tunnel summary
+    - get vpn ike gateway
+    - get router info routing-table details {peer}
+    - diagnose vpn ike gateway list
+    - diagnose vpn tunnel list
+    panos:
+    - show vpn ike-sa
+    - show vpn ipsec-sa
+    - show vpn flow
+    - show vpn tunnel
+    junos:
+    - show security ike security-associations
+    - show security ipsec security-associations
+    - show route {peer}
+    - show security ipsec statistics
+    sonicos:
+    - show vpn policies
+    huawei:
+    - display ike sa
+    - display ipsec sa
+- id: stp-topology-change
+  title: STP topology change ถี่ / เน็ตช้าเป็นช่วงๆ
+  title_en: Frequent STP topology changes / intermittent slowness
+  summary: หาว่า topology change มาจากพอร์ตไหน (ไล่ตาม 'from' ไปทีละ switch) และพอร์ต access ที่ไม่ได้ตั้ง portfast/edge
+  summary_en: Find which port the topology changes come from (follow 'from' switch by switch) and access ports without portfast/edge
+  params:
+  - &id001
+    key: vlan
+    label: VLAN ID (ไม่บังคับ)
+    kind: vlan
+    hint: เช่น 10
+  question: topology change (TCN) เกิดบ่อย เทียบผลทุกเครื่อง หาพอร์ตต้นทางของ topology change ล่าสุด (last change from), จำนวนครั้ง, root bridge, พอร์ตที่ขึ้นลง และพอร์ต access ที่ไม่ได้เป็น portfast/edge แล้วบอกจุดต้นเหตุที่น่าจะเป็นที่สุด
+  question_en: Topology changes (TCN) happen often. Compare all devices, find the port where the latest topology change came from, the count, the root bridge, flapping ports and access ports not set as portfast/edge, then name the most likely source.
+  causes:
+  - th: 'พอร์ตที่ต่อ PC/AP/กล้อง/โทรศัพท์ ไม่ได้ตั้ง portfast / edge port: ทุกครั้งที่เครื่องปลายทางเปิดปิดจะเกิด TCN และ flush MAC ทั้ง VLAN'
+    en: 'Ports facing PCs/APs/cameras/phones are not portfast / edge: every power cycle sends a TCN and flushes MACs across the VLAN'
+  - th: 'ลิงก์ uplink หรือพอร์ตใดพอร์ตหนึ่งขึ้นลงจริง (สาย, SFP, ปลายทางรีบูต): ไล่จาก ''occurred/from'' ทีละ switch จนเจอพอร์ตต้นทาง'
+    en: 'An uplink or some port actually flaps (cable, SFP, far end rebooting): follow ''occurred/from'' switch by switch to the originating port'
+  - th: 'root bridge ไม่นิ่ง / ไม่ได้กำหนด priority: switch ใหม่หรือ switch ราคาถูกแย่ง root'
+    en: 'Unstable root / no priority set: a new or cheap switch takes over as root'
+  - th: ผสม STP ต่างโหมดหรือต่างยี่ห้อ (PVST+/RSTP/MSTP) ทำให้ boundary port เปลี่ยนสถานะบ่อย
+    en: Mixed STP modes or vendors (PVST+/RSTP/MSTP) make boundary ports change state often
+  - th: 'unmanaged switch / wireless bridge ที่ส่ง BPDU กลับมา: ตั้ง BPDU guard ที่พอร์ต access'
+    en: 'Unmanaged switches / wireless bridges reflecting BPDUs: enable BPDU guard on access ports'
+  refs:
+  - title: 'Cisco Community: Tracking spanning-tree TCN origin'
+    url: https://community.cisco.com/t5/switching/tracking-spanning-tree-tcn-origin/m-p/1164882/highlight/true
+  - title: 'Cisco Community: show spanning-tree vlan detail for troubleshooting'
+    url: https://community.cisco.com/t5/switching/troubleshooting-spanning-tree-show-spanning-tree-vlan-detail/m-p/4162743/highlight/true
+  - title: 'Cisco: Troubleshoot STP issues on Catalyst switches'
+    url: https://www3-realm.cisco.com/en/US/tech/tk389/tk621/technologies_tech_note09186a0080094797.shtml
+  - title: 'NetworkLessons forum: Spanning tree topology change notification'
+    url: https://forum.networklessons.com/t/spanning-tree-topology-change-notification-tcn/1120/37
+  search: spanning tree topology change notification TCN source port flapping
+  commands:
+    cisco_ios:
+    - show spanning-tree detail | include (ieee|occurr|from|is exec)
+    - show spanning-tree vlan {vlan} detail | include (occurr|from)
+    - show spanning-tree summary
+    - show spanning-tree root
+    - show logging | include (LINK|LINEPROTO|SPANTREE)
+    nxos:
+    - show spanning-tree detail | include (ieee|occurr|from|is exec)
+    - show spanning-tree summary
+    - show spanning-tree root
+    - show logging logfile | include (UPDOWN|STP)
+    eos:
+    - show spanning-tree topology status detail
+    - show spanning-tree
+    - show spanning-tree root
+    - show logging | include (LINK|STP)
+    junos:
+    - show spanning-tree bridge detail
+    - show spanning-tree statistics interface
+    - show log messages | match (STP|TOPO)
+    huawei:
+    - display stp topology-change
+    - display stp tc-bpdu statistics
+    - display stp brief
+    - display logbuffer | include (STP|UPDOWN)
+    comware:
+    - display stp tc
+    - display stp history
+    - display stp brief
+    - display logbuffer | include (STP|UPDOWN)
+    aoscx:
+    - show spanning-tree detail
+    - show spanning-tree
+    - show logging -r | include (STP|link)
+- id: lacp-portchannel
+  title: Port-channel / LACP ไม่ bundle หรือ suspended
+  title_en: Port-channel / LACP not bundling or suspended
+  summary: ดูสถานะสมาชิกของ port-channel, LACP partner, ตัวนับ LACPDU และค่าที่ต้องตรงกันทุกพอร์ต
+  summary_en: Member state, LACP partner, LACPDU counters and settings that must match on every member
+  params:
+  - &id002
+    key: interface
+    label: Interface ที่สงสัย (ไม่บังคับ)
+    kind: interface
+    hint: เช่น Gi1/0/24, Ethernet1/1, ge-0/0/1
+  question: port-channel ไม่ bundle หรือสมาชิก suspended เทียบสองฝั่ง ดูโหมด (active/passive/on), LACP partner (system-id/key), speed/duplex/VLAN/MTU ของสมาชิกที่ต้องเหมือนกัน และตัวนับ LACPDU แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: 'A port-channel is not bundling or members are suspended. Compare both sides: mode (active/passive/on), LACP partner (system-id/key), member speed/duplex/VLAN/MTU that must match, and LACPDU counters, then give the most likely cause.'
+  causes:
+  - th: 'โหมดไม่เข้ากัน: ฝั่งหนึ่ง ''on'' (static) อีกฝั่ง LACP หรือ passive ทั้งคู่: พอร์ตเป็น suspended / individual'
+    en: 'Incompatible modes: one side ''on'' (static) and the other LACP, or passive on both: ports go suspended / individual'
+  - th: สมาชิกต่อไปคนละอุปกรณ์ (partner system-id ไม่เหมือนกัน) โดยไม่มี vPC/MLAG/VSX/stack
+    en: Members land on different devices (different partner system-id) without vPC/MLAG/VSX/stack
+  - th: 'ค่าของสมาชิกไม่เหมือนกัน: speed, duplex, allowed VLAN, native VLAN, MTU, mode access/trunk'
+    en: 'Member settings differ: speed, duplex, allowed VLANs, native VLAN, MTU, access/trunk mode'
+  - th: 'ไม่ได้รับ LACPDU (ตัวนับ RX ไม่ขึ้น): สายต่อผิดพอร์ต หรืออีกฝั่งยังไม่ได้ตั้ง LACP'
+    en: 'No LACPDUs received (RX counter not increasing): cabled to the wrong port, or LACP not configured on the far end'
+  - th: 'บน stack/VSS: สมาชิกอยู่บน switch ที่เพิ่งรีบูตหรือ stack แยก'
+    en: 'On a stack/VSS: members sit on a member switch that just rebooted or a split stack'
+  refs:
+  - title: 'Cisco: Troubleshoot EtherChannels on Catalyst 9000'
+    url: https://www.cisco.com/c/nl_nl/support/docs/switches/catalyst-9300-series-switches/220367-troubleshoot-etherchannels-on-catalyst-9.html
+  - title: 'Cisco: Understanding EtherChannel load balancing and inconsistency'
+    url: https://www.cisco.com/c/en/us/support/docs/switches/catalyst-2950-series-switches/24042-158.html
+  - title: 'Cisco Community: All LACP links are suspended'
+    url: https://community.cisco.com/t5/switching/all-lacp-links-are-suspended/m-p/3809265/highlight/true
+  search: port-channel LACP suspended not bundling individual
+  commands:
+    cisco_ios:
+    - show etherchannel summary
+    - show lacp neighbor
+    - show lacp counters
+    - show etherchannel detail
+    - show interfaces {interface} etherchannel
+    - show logging | include (EC-5|ETHCNTR|LINK)
+    nxos:
+    - show port-channel summary
+    - show lacp neighbor
+    - show lacp counters
+    - show port-channel compatibility-parameters
+    - show logging logfile | include (PORT-CHANNEL|LACP)
+    eos:
+    - show port-channel dense
+    - show lacp neighbor
+    - show lacp counters
+    - show port-channel detailed
+    junos:
+    - show lacp interfaces
+    - show lacp statistics interfaces
+    - show interfaces ae0 terse
+    huawei:
+    - display eth-trunk
+    - display interface brief
+    - display logbuffer | include (TRUNK|LACP)
+    comware:
+    - display link-aggregation summary
+    - display link-aggregation verbose
+    - display link-aggregation member-port
+    aoscx:
+    - show lacp interfaces
+    - show lacp aggregates
+    - show interface lag
+    fortios:
+    - diagnose netlink aggregate list
+    panos:
+    - show lacp aggregate-ethernet all
+- id: fhrp
+  title: 'HSRP / VRRP: gateway สลับไปมา หรือ active ทั้งคู่'
+  title_en: HSRP / VRRP gateway flapping or both active
+  summary: ดูสถานะ HSRP/VRRP ของทั้งคู่, priority/preempt, track และลิงก์ระหว่างกันที่ hello ต้องวิ่งผ่าน
+  summary_en: HSRP/VRRP state on both peers, priority/preempt, tracking, and the link the hellos must cross
+  params:
+  - *id001
+  question: gateway สำรอง (HSRP/VRRP) ไม่ปกติ เทียบสองเครื่อง ดู state (active/standby/master), priority, preempt, track, group/VIP และว่า hello วิ่งถึงกันไหม แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: 'The redundant gateway (HSRP/VRRP) is unhealthy. Compare both devices: state (active/standby/master), priority, preempt, tracking, group/VIP and whether hellos reach each other, then give the most likely cause.'
+  causes:
+  - th: 'active ทั้งคู่: hello ไปไม่ถึงกัน (VLAN ไม่อยู่บน trunk ระหว่างคู่, STP block, ACL/CoPP บล็อก 224.0.0.2/.102/.18)'
+    en: 'Both active: hellos don''t reach each other (VLAN not on the inter-switch trunk, STP blocking, ACL/CoPP dropping 224.0.0.2/.102/.18)'
+  - th: 'group number / version / authentication ไม่ตรงกัน: ต่างคนต่าง active'
+    en: 'Group number, version or authentication mismatch: each side stays active'
+  - th: 'สลับไปมา: track ไปผูกกับ interface/route ที่ขึ้นลง ร่วมกับ preempt'
+    en: 'Flapping: tracking an interface/route that flaps, combined with preempt'
+  - th: CPU สูงจน hello ส่งไม่ทัน (timer สั้นมาก)
+    en: High CPU delays hellos (very short timers)
+  - th: 'active ไม่ตรงกับ STP root: traffic อ้อมผ่าน switch อีกตัว ไม่ใช่ความเสีย แต่ทำให้ช้า'
+    en: 'Active gateway not aligned with the STP root: traffic hairpins through the other switch (not broken, but slower)'
+  refs:
+  - title: 'Cisco: Understand and troubleshoot HSRP problems in Catalyst switch networks'
+    url: https://www.cisco.com/c/en/us/support/docs/ip/hot-standby-router-protocol-hsrp/13782-8.html
+  - title: 'Cisco Community: HSRP flapping'
+    url: https://community.cisco.com/t5/switching/hsrp-flapping/m-p/4757795
+  search: HSRP VRRP both active flapping state change
+  commands:
+    cisco_ios:
+    - show standby brief
+    - show standby
+    - show vrrp brief
+    - show logging | include (HSRP|VRRP)
+    nxos:
+    - show hsrp brief
+    - show hsrp
+    - show vrrp
+    - show logging logfile | include (HSRP|VRRP)
+    eos:
+    - show vrrp brief
+    - show vrrp
+    - show logging | include VRRP
+    junos:
+    - show vrrp summary
+    - show vrrp detail
+    huawei:
+    - display vrrp brief
+    - display vrrp
+    - display logbuffer | include VRRP
+    comware:
+    - display vrrp
+    - display vrrp verbose
+    aoscx:
+    - show vrrp brief
+    - show vrrp
+    fortios:
+    - get router info vrrp
+- id: dhcp
+  title: เครื่องลูกข่ายไม่ได้ IP (DHCP / relay)
+  title_en: Clients not getting an IP (DHCP / relay)
+  summary: ดู ip helper / relay, DHCP snooping, pool และ binding บนเครื่องที่เป็น gateway หรือ DHCP server
+  summary_en: ip helper / relay, DHCP snooping, pools and bindings on the gateway or DHCP server
+  params:
+  - *id001
+  - *id002
+  question: เครื่องลูกข่ายไม่ได้ IP จาก DHCP เทียบผลทุกเครื่อง ดู helper/relay ที่ชี้ server, DHCP snooping (trusted port, rate-limit, option 82), pool ที่เต็มหรือ conflict และ route กลับไปหา relay แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: 'Clients aren''t getting an IP from DHCP. Compare all devices: helper/relay pointing to the server, DHCP snooping (trusted ports, rate limit, option 82), exhausted pools or conflicts, and the server''s route back to the relay, then give the most likely cause.'
+  causes:
+  - th: ไม่มี ip helper-address / dhcp relay บน SVI ของ VLAN นั้น หรือชี้ IP server ผิด
+    en: No ip helper-address / DHCP relay on that VLAN's SVI, or it points to the wrong server
+  - th: 'DHCP snooping เปิดแต่ uplink ไม่ได้เป็น trusted หรือมี option 82 ที่ server ปฏิเสธ: OFFER ถูกทิ้ง'
+    en: 'DHCP snooping enabled but the uplink isn''t trusted, or option 82 is rejected by the server: OFFERs are dropped'
+  - th: server ไม่มี route กลับไปหา IP ของ relay (giaddr) หรือ firewall บล็อก UDP 67/68
+    en: The server has no route back to the relay IP (giaddr), or a firewall blocks UDP 67/68
+  - th: pool เต็ม / scope ไม่ตรงกับ subnet ของ giaddr / มี IP conflict
+    en: Pool exhausted / scope doesn't match the giaddr subnet / IP conflicts
+  - th: พอร์ต access ขึ้นช้า (ไม่มี portfast) ทำให้ client หมดเวลารอก่อน
+    en: Access port comes up slowly (no portfast) so the client times out first
+  refs:
+  - title: 'Cisco: Troubleshoot DHCP on Catalyst 9000 switches'
+    url: https://www.cisco.com/c/de_de/support/docs/switches/catalyst-9300-switch/221717-troubleshoot-dhcp-on-catalyst-9000-switc.html
+  - title: 'Cisco: Configure and troubleshoot DHCP relay / ip helper-address'
+    url: https://www.cisco.com/c/en/us/support/docs/ip/dynamic-address-allocation-resolution/27470-100.html
+  search: DHCP relay ip helper-address clients not getting IP snooping
+  commands:
+    cisco_ios:
+    - show running-config | include (helper-address|interface Vlan|dhcp)
+    - show ip dhcp snooping
+    - show ip dhcp snooping statistics
+    - show ip dhcp snooping binding
+    - show ip dhcp pool
+    - show ip dhcp conflict
+    - show interfaces {interface} switchport
+    nxos:
+    - show ip dhcp relay
+    - show ip dhcp relay statistics
+    - show ip dhcp snooping
+    - show ip dhcp snooping binding
+    eos:
+    - show ip dhcp relay
+    - show ip dhcp relay counters
+    - show ip dhcp snooping
+    junos:
+    - show dhcp relay binding
+    - show dhcp relay statistics
+    - show dhcp server binding
+    - show configuration forwarding-options dhcp-relay
+    huawei:
+    - display dhcp relay all
+    - display dhcp relay statistics
+    - display dhcp snooping
+    - display ip pool
+    comware:
+    - display dhcp relay server-address
+    - display dhcp relay statistics
+    - display dhcp snooping binding
+    - display dhcp server ip-in-use
+    aoscx:
+    - show dhcp-relay
+    - show dhcp-server
+    - show dhcpv4-snooping
+    fortios:
+    - execute dhcp lease-list
+    - show system dhcp server
+    asa:
+    - show dhcpd binding
+    - show dhcpd statistics
+    - show running-config dhcprelay
+    ros:
+    - /ip dhcp-server lease print
+    - /ip dhcp-server print
+    - /ip dhcp-relay print
+- id: dot1x
+  title: 802.1X / MAB ยืนยันตัวตนไม่ผ่าน
+  title_en: 802.1X / MAB authentication failing
+  summary: ดู session การยืนยันตัวตนต่อพอร์ต, สถานะ RADIUS server, VLAN/ACL ที่ได้รับ และ log
+  summary_en: Per-port authentication sessions, RADIUS server state, assigned VLAN/ACL and logs
+  params:
+  - *id002
+  question: 802.1X/MAB ไม่ผ่าน ดู session ของพอร์ต (method dot1x/mab, สถานะ, VLAN/ACL ที่ได้), RADIUS server ว่า alive ไหมและ timeout, และ log แล้วบอกว่าล้มที่ client, switch หรือ RADIUS พร้อมสาเหตุที่น่าจะเป็นที่สุด
+  question_en: 802.1X/MAB is failing. Look at the port's session (dot1x/mab method, state, assigned VLAN/ACL), whether the RADIUS server is alive and timing out, and the logs, then say whether it fails at the client, switch or RADIUS, with the most likely cause.
+  causes:
+  - th: 'RADIUS server ตอบไม่ทัน / dead: shared secret ไม่ตรง, server ไม่รู้จัก NAS IP (source interface ผิด) หรือ firewall บล็อก UDP 1812/1813'
+    en: 'RADIUS server not answering / dead: shared secret mismatch, server doesn''t know the NAS IP (wrong source interface), or a firewall blocks UDP 1812/1813'
+  - th: 'client ไม่ส่ง EAPOL (ไม่ได้เปิด 802.1X supplicant): ต้องพึ่ง MAB และลำดับ/priority ของ method'
+    en: 'The client sends no EAPOL (no 802.1X supplicant): relies on MAB and the method order/priority'
+  - th: certificate ฝั่ง client/server หมดอายุหรือไม่ trust (EAP-TLS/PEAP) หรือ เวลาเครื่องเพี้ยน (ดูอาการ NTP)
+    en: Client/server certificate expired or untrusted (EAP-TLS/PEAP), or clocks are off (see the NTP runbook)
+  - th: 'ผ่านแล้วแต่ใช้งานไม่ได้: VLAN ที่ RADIUS ส่งมาไม่มีบน switch หรือ dACL บล็อก'
+    en: 'Authenticated but no access: the VLAN returned by RADIUS doesn''t exist on the switch, or a dACL blocks traffic'
+  - th: 'โทรศัพท์ IP + PC พอร์ตเดียว: host-mode (multi-auth/multi-domain) ไม่ตรงกับการใช้งาน'
+    en: 'IP phone + PC on one port: host-mode (multi-auth/multi-domain) doesn''t fit the setup'
+  notes:
+  - th: Cisco IOS 15 ใช้ 'show authentication sessions' ส่วน IOS-XE 16+ ใช้ 'show access-session' ใส่ไว้ทั้งสองแบบ
+    en: Cisco IOS 15 uses 'show authentication sessions'; IOS-XE 16+ uses 'show access-session'. Both are included
+  refs:
+  - title: 'Cisco: Troubleshoot 802.1X on Catalyst 9000 (PDF)'
+    url: https://bxin.cisco.com/c/zh_cn/support/docs/lan-switching/8021x/220919-troubleshoot-dot1x-on-catalyst-9000-seri.pdf
+  - title: 'Cisco Community: How to troubleshoot ISE failed authentications'
+    url: https://community.cisco.com/t5/security-knowledge-base/how-to-troubleshoot-ise-failed-authentications-amp/tac-p/3630961
+  - title: 'Cisco Community: MAB not working'
+    url: https://community.cisco.com/t5/network-access-control/mab-not-working/m-p/5041166
+  search: 802.1X MAB authentication failed RADIUS dead
+  commands:
+    cisco_ios:
+    - show access-session
+    - show access-session interface {interface} details
+    - show authentication sessions
+    - show authentication sessions interface {interface} details
+    - show dot1x all
+    - show aaa servers
+    - show logging | include (DOT1X|MAB|AUTHMGR|RADIUS)
+    nxos:
+    - show dot1x all
+    - show radius-server
+    - show logging logfile | include (DOT1X|RADIUS)
+    eos:
+    - show dot1x hosts
+    - show dot1x interface {interface} detail
+    - show radius
+    junos:
+    - show dot1x interface
+    - show dot1x interface {interface} detail
+    - show network-access aaa statistics authentication
+    huawei:
+    - display access-user
+    - display dot1x
+    - display radius-server configuration
+    - display logbuffer | include (DOT1X|AAA|RADIUS)
+    comware:
+    - display dot1x
+    - display dot1x connection
+    - display radius scheme
+    aoscx:
+    - show aaa authentication port-access interface all client-status
+    - show radius-server detail
+    - show port-access role
+- id: fw-policy
+  title: Firewall ทิ้ง traffic / NAT ไม่ทำงาน
+  title_en: Firewall dropping traffic / NAT not working
+  summary: จำลอง packet ผ่าน policy/NAT จริงของเครื่อง (ASA packet-tracer, PAN-OS test), ดู session, NAT และตัวนับการทิ้ง
+  summary_en: Simulate the packet through the box's own policy/NAT (ASA packet-tracer, PAN-OS test), and check sessions, NAT and drop counters
+  params:
+  - key: src
+    label: IP ต้นทาง
+    kind: ip
+    hint: เช่น 192.168.10.20
+  - key: dst
+    label: IP ปลายทาง
+    kind: ip
+    hint: เช่น 10.20.30.40
+  - key: port
+    label: พอร์ตปลายทาง (TCP)
+    kind: port
+    hint: เช่น 443
+  - key: interface
+    label: Interface/nameif ขาเข้า (ASA ต้องใช้, FortiGate ใช้กับ iprope lookup)
+    kind: interface
+    hint: เช่น inside, port1
+  question: traffic ถูก firewall ทิ้งหรือ NAT ไม่ทำงาน ดูผลการจำลองของเครื่อง (policy ที่ match, NAT ที่ใช้, เหตุที่ drop), session ที่มีอยู่ และตัวนับการทิ้ง แล้วบอก rule/NAT ที่เป็นต้นเหตุและสิ่งที่ต้องแก้
+  question_en: Traffic is being dropped by the firewall or NAT doesn't work. Look at the device's own simulation (matched policy, NAT used, drop reason), existing sessions and drop counters, then name the rule/NAT at fault and what to change.
+  causes:
+  - th: 'policy ที่ match ก่อนเป็น deny (ลำดับ rule) หรือ implicit deny ท้ายสุด: ดู rule ที่ match ในผลจำลอง'
+    en: 'A deny rule matches first (rule order) or the implicit deny at the end: check the matched rule in the simulation'
+  - th: zone / interface ไม่ตรงกับที่คิด เพราะ route ขาออกไปอีกทาง (ต้องดู route ก่อน policy)
+    en: Zone / interface isn't what you expect because the egress route goes elsewhere (routing is evaluated before policy)
+  - th: 'NAT: ลำดับ NAT rule ทับกัน, ขาด no-NAT สำหรับ VPN, หรือ port forward (VIP/DNAT) ไม่ได้ผูกกับ policy ที่อนุญาต IP ภายใน'
+    en: 'NAT: overlapping NAT order, missing no-NAT for VPN, or a port forward (VIP/DNAT) not tied to a policy allowing the internal IP'
+  - th: 'asymmetric routing: firewall เห็นแค่ขาเดียว ทิ้งเพราะ session ไม่มี SYN (ASA: tcp-not-syn, Forti: no session matched)'
+    en: 'Asymmetric routing: the firewall only sees one direction and drops packets without a session (ASA tcp-not-syn, Forti ''no session matched'')'
+  - th: application / security profile (App-ID, IPS, SSL inspection) บล็อก ไม่ใช่ policy L4
+    en: An application / security profile (App-ID, IPS, SSL inspection) blocks it, not the L4 policy
+  refs:
+  - title: 'Cisco Community: Troubleshooting access problems using packet-tracer'
+    url: https://community.cisco.com/t5/security-knowledge-base/troubleshooting-access-problems-using-packet-tracer/ta-p/3114976
+  - title: 'Cisco: ASA NAT troubleshooting (PDF)'
+    url: https://bxin.cisco.com/c/en/us/support/docs/security/asa-5500-x-series-next-generation-firewalls/116388-technote-nat-00.pdf
+  search: firewall policy drop NAT not working packet-tracer
+  commands:
+    asa:
+    - packet-tracer input {interface} tcp {src} 12345 {dst} {port} detailed
+    - show conn address {dst}
+    - show xlate
+    - show nat detail
+    - show asp drop
+    - show route {dst}
+    panos:
+    - test security-policy-match source {src} destination {dst} destination-port {port} protocol 6
+    - test nat-policy-match source {src} destination {dst} destination-port {port} protocol 6
+    - show session all filter destination {dst}
+    - show counter global filter delta yes severity drop
+    fortios:
+    - diagnose firewall iprope lookup {src} 12345 {dst} {port} 6 {interface}
+    - get router info routing-table details {dst}
+    - show firewall vip
+    - show firewall ippool
+    - diagnose sys session stat
+    junos:
+    - show security policies hit-count
+    - show security flow session destination-prefix {dst}
+    - show security nat source rule all
+    - show security nat destination rule all
+    cisco_ios:
+    - show ip nat translations
+    - show ip nat statistics
+    - show ip access-lists
+    - show ip route {dst}
+    huawei:
+    - display firewall session table
+    - display nat session all
+    - display security-policy rule all
+- id: remote-access-vpn
+  title: VPN ผู้ใช้ (SSL VPN / GlobalProtect / AnyConnect) เชื่อมต่อไม่ได้
+  title_en: Remote-access VPN (SSL VPN / GlobalProtect / AnyConnect) not connecting
+  summary: ดูผู้ใช้ที่เชื่อมต่ออยู่, สถิติ, การตั้งค่าพอร์ต/ใบรับรอง และ license ของ remote access
+  summary_en: Connected users, statistics, port/certificate settings and remote-access licensing
+  params: []
+  question: ผู้ใช้ VPN (remote access) เชื่อมต่อไม่ได้ ดูผู้ใช้ที่ต่ออยู่, จำนวนเทียบ license, ใบรับรอง, พอร์ตที่ใช้, pool IP และการยืนยันตัวตน แล้วบอกว่าล้มที่ขั้นไหน (เข้าถึงพอร์ต, ใบรับรอง, login, ได้ IP, ใช้งาน) พร้อมสาเหตุที่น่าจะเป็นที่สุด
+  question_en: Remote-access VPN users can't connect. Look at connected users, count vs license, certificate, listening port, IP pool and authentication, then say which stage fails (reaching the port, certificate, login, IP assignment, usage) and the most likely cause.
+  causes:
+  - th: 'FortiOS 7.6.3 ขึ้นไป: SSL VPN tunnel mode ถูกเอาออก (บางรุ่นไม่มี SSL VPN แล้ว) ต้องย้ายไป IPsec dial-up / FortiClient IPsec'
+    en: 'FortiOS 7.6.3+: SSL VPN tunnel mode was removed (some models no longer have SSL VPN); migrate to IPsec dial-up / FortiClient IPsec'
+  - th: 'FortiClient ค้างที่ 10% / 40% / 80%: แต่ละช่วงคือคนละขั้น (เชื่อมต่อ, ยืนยันตัวตน, รับค่า tunnel) บทความ Fortinet อธิบายแยกช่วง'
+    en: 'FortiClient stuck at 10% / 40% / 80%: each percentage is a different stage (connect, authenticate, tunnel setup); Fortinet documents each'
+  - th: ใบรับรองหมดอายุหรือ client ไม่ trust / เวลาเครื่องเพี้ยน
+    en: Expired or untrusted certificate / wrong device clock
+  - th: IP pool หมด หรือจำนวนผู้ใช้เกิน license (AnyConnect/GlobalProtect)
+    en: IP pool exhausted or users exceed the license (AnyConnect/GlobalProtect)
+  - th: 'ต่อได้แต่ใช้งานไม่ได้: split tunnel ไม่ครอบ subnet, ไม่มี policy จาก VPN zone, หรือ route กลับไปหา pool ไม่มี'
+    en: 'Connected but nothing works: split tunnel doesn''t cover the subnet, no policy from the VPN zone, or no return route to the pool'
+  - th: 'ถูก brute-force / IP ถูก ban: ตรวจ log การ login ล้มเหลวจำนวนมาก'
+    en: 'Brute-force attempts / banned IPs: check for many failed logins in the logs'
+  notes:
+  - th: FortiOS 7.6.3+ ไม่มี SSL VPN tunnel mode ถ้าลูกค้าอัปเกรดแล้ว VPN หาย นี่คือสาเหตุ
+    en: FortiOS 7.6.3+ has no SSL VPN tunnel mode; if VPN disappeared after an upgrade, this is why
+  refs:
+  - title: 'Fortinet: SSL VPN troubleshooting'
+    url: https://community.fortinet.com/fortigate-3/troubleshooting-tip-ssl-vpn-troubleshooting-92346
+  - title: 'Fortinet: Common SSL VPN problems and their solutions'
+    url: https://community.fortinet.com/fortigate-3/troubleshooting-tip-common-ssl-vpn-problems-and-their-solutions-93897
+  - title: 'Fortinet: Reasons for FortiClient SSL VPN failure at specific percentages'
+    url: https://community.fortinet.com/fortigate-3/troubleshooting-tip-possible-reasons-for-forticlient-ssl-vpn-connectivity-failure-at-specific-percentages-108106
+  - title: FortiOS 7.6.3 SSL VPN tunnel mode removed (overview)
+    url: https://dev.to/madhushan/fortios-763-update-ssl-vpn-tunnel-mode-no-longer-supported-27hg
+  - title: 'Palo Alto: Troubleshooting GlobalProtect'
+    url: https://live.paloaltonetworks.com/docs/DOC-2568
+  - title: 'Palo Alto PANCast: GlobalProtect connections and troubleshooting'
+    url: https://live.paloaltonetworks.com/t5/pancast/pancast-episode-17-globalprotect-connections-and-troubleshooting/ta-p/541325
+  search: SSL VPN GlobalProtect AnyConnect cannot connect
+  commands:
+    fortios:
+    - get vpn ssl monitor
+    - diagnose vpn ssl statistics
+    - show vpn ssl settings
+    - get system status
+    - diagnose vpn ike gateway list
+    panos:
+    - show global-protect-gateway current-user
+    - show global-protect-gateway statistics
+    - show global-protect-portal summary all
+    - request license info
+    asa:
+    - show vpn-sessiondb anyconnect
+    - show vpn-sessiondb summary
+    - show webvpn anyconnect
+    - show crypto ca certificates
+    - show vpn-sessiondb license-summary
+    junos:
+    - show security ike active-peer
+    - show security ike security-associations
+- id: optics
+  title: ค่าแสง / SFP / transceiver ผิดปกติ
+  title_en: Optics / SFP / transceiver issues
+  summary: ดูค่า Tx/Rx power, อุณหภูมิ, แรงดัน (DOM) เทียบ threshold และตัวนับ error ของพอร์ต
+  summary_en: Tx/Rx power, temperature and voltage (DOM) against thresholds, plus the port's error counters
+  params:
+  - *id002
+  question: ลิงก์ fiber มีปัญหา ดูค่า Tx/Rx power เทียบ threshold ของทั้งสองฝั่ง, อุณหภูมิ, ชนิด SFP และ error counter แล้วบอกว่าปัญหาน่าจะอยู่ที่ฝั่งไหน (Tx ของฝั่งหนึ่ง, สาย, Rx อีกฝั่ง) และควรทำอะไร
+  question_en: A fiber link has problems. Compare Tx/Rx power against thresholds on both ends, temperature, SFP type and error counters, then say where the problem most likely is (one side's Tx, the cable, the other side's Rx) and what to do.
+  causes:
+  - th: 'Rx ต่ำกว่า low-alarm: หัว connector สกปรก (ทำความสะอาดก่อน), สายงอ/หัก หรือระยะเกินที่ SFP รองรับ'
+    en: 'Rx below the low alarm: dirty connectors (clean first), bent/broken fiber, or distance beyond the SFP rating'
+  - th: 'Tx ของอีกฝั่งต่ำ: SFP ฝั่งนั้นเสื่อม (เทียบ Tx ฝั่งตรงข้ามกับ Rx ฝั่งนี้)'
+    en: 'The far end''s Tx is low: that SFP is degrading (compare far-end Tx with local Rx)'
+  - th: 'ชนิดไม่ตรงกัน: SR กับ LR, single-mode กับ multimode หรือ wavelength ต่างกัน'
+    en: 'Type mismatch: SR vs LR, single-mode vs multimode, or different wavelengths'
+  - th: 'Rx สูงเกิน high-alarm: ใช้ LR/ER ระยะสั้นโดยไม่มี attenuator'
+    en: 'Rx above the high alarm: LR/ER optics on a short run without an attenuator'
+  - th: SFP third-party ไม่รองรับ DOM หรือถูกปฏิเสธ (unsupported transceiver)
+    en: Third-party SFP without DOM or rejected as unsupported
+  refs:
+  - title: 'Cisco Community: Digital Optical Monitoring (DOM)'
+    url: https://supportforums.cisco.com/document/75181/digital-optical-monitoring-dom
+  - title: 'Cisco Community: Rx power low alarm on 3850'
+    url: https://community.cisco.com/t5/optics-and-optical-networking/cisco-3850-gi2-0-4-rx-power-low-alarm/m-p/4555588/highlight/true
+  search: SFP rx power low alarm DOM transceiver
+  commands:
+    cisco_ios:
+    - show interfaces transceiver
+    - show interfaces {interface} transceiver detail
+    - show inventory
+    - show interfaces {interface} counters errors
+    nxos:
+    - show interface transceiver details
+    - show interface {interface} transceiver details
+    - show interface {interface} counters errors
+    eos:
+    - show interfaces transceiver
+    - show interfaces {interface} transceiver
+    - show inventory
+    junos:
+    - show interfaces diagnostics optics
+    - show interfaces diagnostics optics {interface}
+    - show chassis hardware
+    huawei:
+    - display transceiver verbose
+    - display transceiver interface {interface} verbose
+    comware:
+    - display transceiver diagnosis interface
+    - display transceiver interface {interface}
+    aoscx:
+    - show interface transceiver detail
+    - show interface {interface} transceiver detail
+    fortios:
+    - get system interface transceiver
+- id: mtu
+  title: บางเว็บ/บางแอปใช้ไม่ได้ (MTU / fragmentation / MSS)
+  title_en: Some sites/apps fail (MTU / fragmentation / MSS)
+  summary: ping แบบห้ามแตก packet ด้วยขนาดต่างๆ และดู MTU / MSS ของ interface ที่สงสัย (โดยเฉพาะ tunnel, PPPoE)
+  summary_en: Ping with don't-fragment at several sizes and check MTU / MSS on the suspect interface (especially tunnels, PPPoE)
+  params:
+  - key: dst
+    label: IP ปลายทางที่ใช้งานไม่ได้
+    kind: ip
+    required: true
+    hint: เช่น 10.20.30.40
+  - *id002
+  question: บางเว็บ/บางแอปใช้ไม่ได้ (เปิดหน้าแรกได้แต่โหลดไม่ครบ, SSL ค้าง) ดูผล ping ห้ามแตก packet ที่ขนาดต่างๆ, MTU ของ interface/tunnel และ MSS clamping แล้วบอก MTU ที่ใช้ได้จริงและค่าที่ควรตั้ง
+  question_en: Some sites/apps fail (first page loads but not fully, SSL hangs). Look at don't-fragment ping results at different sizes, interface/tunnel MTU and MSS clamping, then state the working path MTU and the values to set.
+  causes:
+  - th: ผ่าน tunnel (GRE/IPsec/PPPoE/VXLAN) ที่กิน overhead แต่ไม่ได้ลด MTU หรือ clamp TCP MSS
+    en: Traffic crosses a tunnel (GRE/IPsec/PPPoE/VXLAN) with overhead but MTU isn't lowered and TCP MSS isn't clamped
+  - th: ICMP 'fragmentation needed' ถูก firewall บล็อก ทำให้ Path MTU Discovery ไม่ทำงาน (black hole)
+    en: ICMP 'fragmentation needed' blocked by a firewall, so Path MTU Discovery breaks (black hole)
+  - th: MTU สองฝั่งของลิงก์ไม่เท่ากัน (jumbo ฝั่งเดียว)
+    en: MTU differs between the two ends of a link (jumbo on one side only)
+  - th: 'อาการคลาสสิก: ping ได้, เปิดเว็บหน้าแรกได้, แต่ไฟล์ใหญ่/SSL/SMB ค้าง'
+    en: 'Classic symptom: ping works and the first page opens, but large files/SSL/SMB hang'
+  refs:
+  - title: 'Cisco: Resolve IP fragmentation, MTU, MSS and PMTUD issues with GRE and IPsec (PDF)'
+    url: https://bxin.cisco.com/c/en/us/support/docs/ip/generic-routing-encapsulation-gre/25885-pmtud-ipfrag.pdf
+  - title: 'Cisco Community: MTU issue over GRE/IPsec tunnel'
+    url: https://community.cisco.com/t5/switching/need-help-with-mtu-issue-gre-ipsec-vpn-tunnel/m-p/1456173/highlight/true
+  search: MTU MSS fragmentation PMTUD black hole tunnel
+  commands:
+    cisco_ios:
+    - ping {dst} size 1500 df-bit repeat 2
+    - ping {dst} size 1472 df-bit repeat 2
+    - ping {dst} size 1400 df-bit repeat 2
+    - ping {dst} size 1300 df-bit repeat 2
+    - show interfaces {interface} | include MTU
+    - show ip interface {interface} | include (MTU|TCP)
+    nxos:
+    - ping {dst} packet-size 1472 df-bit count 2
+    - ping {dst} packet-size 1400 df-bit count 2
+    - ping {dst} packet-size 1300 df-bit count 2
+    - show interface {interface} | include MTU
+    eos:
+    - ping {dst} size 1500 df-bit repeat 2
+    - ping {dst} size 1400 df-bit repeat 2
+    - ping {dst} size 1300 df-bit repeat 2
+    - show interfaces {interface} | include MTU
+    junos:
+    - ping {dst} size 1472 do-not-fragment count 2
+    - ping {dst} size 1372 do-not-fragment count 2
+    - ping {dst} size 1272 do-not-fragment count 2
+    - show interfaces {interface} | match MTU
+    huawei:
+    - ping -s 1472 -f -c 2 {dst}
+    - ping -s 1372 -f -c 2 {dst}
+    - ping -s 1272 -f -c 2 {dst}
+    - display interface {interface} | include MTU
+    comware:
+    - ping -s 1472 -f -c 2 {dst}
+    - ping -s 1372 -f -c 2 {dst}
+    - display interface {interface} | include MTU
+    aoscx:
+    - ping {dst} datagram-size 1472 do-not-fragment repetitions 2
+    - ping {dst} datagram-size 1372 do-not-fragment repetitions 2
+    - show interface {interface}
+    fortios:
+    - show system interface {interface}
+    - get router info routing-table details {dst}
+    asa:
+    - show interface {interface}
+    - show running-config sysopt
+    - show running-config mtu
+- id: ntp-time
+  title: เวลาเครื่องเพี้ยน / NTP ไม่ sync
+  title_en: Device clock wrong / NTP not syncing
+  summary: ดูสถานะ NTP, server ที่ใช้, stratum และเวลาปัจจุบัน (เวลาเพี้ยนทำให้ log, ใบรับรอง, 802.1X, VPN มีปัญหา)
+  summary_en: NTP status, servers, stratum and the current clock (a wrong clock breaks logs, certificates, 802.1X and VPN)
+  params: []
+  question: เวลาเครื่องเพี้ยนหรือ NTP ไม่ sync ดูสถานะ association, stratum, reachability, source interface, timezone และเวลาปัจจุบัน แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: The device clock is wrong or NTP isn't syncing. Look at association state, stratum, reachability, source interface, timezone and the current time, then give the most likely cause.
+  causes:
+  - th: 'ไปหา NTP server ไม่ถึง: ไม่มี route จาก source interface ที่ใช้ หรือ firewall บล็อก UDP 123'
+    en: 'NTP server unreachable: no route from the source interface used, or a firewall blocks UDP 123'
+  - th: เวลาห่างจาก server มากเกินไปจนไม่ยอม sync (บางยี่ห้อต้องตั้งเวลาใกล้เคียงก่อน)
+    en: Clock is too far off for NTP to accept (some platforms need the clock set close first)
+  - th: authentication key ของ NTP ไม่ตรง หรือ server ตั้งให้ตอบเฉพาะบาง IP
+    en: NTP authentication key mismatch, or the server only answers some IPs
+  - th: 'เวลาถูกแต่ timezone / summer-time ผิด: log ดูเพี้ยนแต่ NTP ปกติ'
+    en: 'Time is right but timezone / summer-time is wrong: logs look off while NTP is fine'
+  refs:
+  - title: 'Cisco: Troubleshoot and debug NTP issues (PDF)'
+    url: https://bxin.cisco.com/c/en/us/support/docs/ip/network-time-protocol-ntp/116161-trouble-ntp-00.pdf
+  - title: 'Cisco: Understanding show ntp associations'
+    url: https://www.cisco.com/c/en/us/support/docs/ios-nx-os-software/ios-software-releases-110/15171-ntpassoc.html
+  search: NTP not synchronized clock unsynchronized
+  commands:
+    cisco_ios:
+    - show ntp status
+    - show ntp associations
+    - show clock detail
+    - show running-config | include ntp
+    nxos:
+    - show ntp peer-status
+    - show ntp statistics peer ipaddr
+    - show clock
+    eos:
+    - show ntp status
+    - show ntp associations
+    - show clock
+    junos:
+    - show ntp associations
+    - show ntp status
+    - show system uptime
+    huawei:
+    - display ntp-service status
+    - display ntp-service sessions
+    - display clock
+    comware:
+    - display ntp-service status
+    - display ntp-service sessions
+    - display clock
+    aoscx:
+    - show ntp status
+    - show ntp associations
+    - show clock
+    fortios:
+    - diagnose sys ntp status
+    - get system status
+    asa:
+    - show ntp status
+    - show ntp associations
+    - show clock
+    panos:
+    - show ntp
+    - show clock
+    ros:
+    - /system ntp client print
+    - /system clock print
+- id: poe
+  title: อุปกรณ์ PoE (AP / กล้อง / โทรศัพท์) ไม่ติดหรือดับเป็นช่วง
+  title_en: PoE device (AP / camera / phone) not powering or dropping
+  summary: ดูกำลังไฟที่จ่าย, งบไฟรวมของ switch, class ของอุปกรณ์ และ log ของพอร์ต PoE
+  summary_en: Power delivered, the switch's total power budget, device class and PoE port logs
+  params:
+  - *id002
+  question: อุปกรณ์ PoE ไม่ติดหรือดับเป็นช่วง ดูสถานะพอร์ต (on/off/faulty/denied), กำลังที่ใช้เทียบ class, งบไฟรวมของ switch และ log แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: A PoE device won't power up or drops. Look at port state (on/off/faulty/denied), power drawn vs class, the switch power budget and logs, then give the most likely cause.
+  causes:
+  - th: งบไฟรวมของ switch ไม่พอ (power denied) เมื่อเสียบอุปกรณ์เพิ่ม หรือ power supply ตัวหนึ่งเสีย
+    en: The switch power budget is exhausted (power denied) after adding devices, or one power supply failed
+  - th: อุปกรณ์ต้องการ 802.3at/bt (PoE+/UPOE เช่น AP Wi-Fi 6/7) แต่พอร์ตจ่ายได้แค่ 802.3af
+    en: The device needs 802.3at/bt (PoE+/UPOE, e.g. Wi-Fi 6/7 APs) but the port only supplies 802.3af
+  - th: 'พอร์ต faulty / ILPOWER error: สายยาวหรือคุณภาพต่ำ, หัวต่อเสีย, หรือมี injector ซ้อน'
+    en: 'Port faulty / ILPOWER errors: long or poor-quality cable, bad connector, or a stacked injector'
+  - th: 'ดับเป็นช่วงพร้อมกันหลายตัว: switch รีบูตหรือ power supply/UPS มีปัญหา ดู uptime และ log'
+    en: 'Several drop at once: the switch rebooted or the PSU/UPS had issues; check uptime and logs'
+  refs:
+  - title: 'Cisco: Troubleshooting Power over Ethernet (Catalyst 3750, PDF)'
+    url: https://www3-realm.cisco.com/en/US/docs/switches/lan/catalyst3750/software/troubleshooting/g_power_over_ethernet.pdf
+  - title: 'Cisco Community: Catalyst 3850 stops providing PoE'
+    url: https://community.cisco.com/t5/routing/catalyst-3850-stops-providing-poe/td-p/2655384
+  search: PoE power inline denied faulty not powering access point
+  commands:
+    cisco_ios:
+    - show power inline
+    - show power inline {interface} detail
+    - show environment power
+    - show logging | include ILPOWER
+    nxos:
+    - show environment power
+    eos:
+    - show poe
+    - show poe interface {interface} detail
+    junos:
+    - show poe interface
+    - show poe controller
+    - show poe interface {interface}
+    huawei:
+    - display poe power-state
+    - display poe power
+    - display poe information
+    comware:
+    - display poe interface
+    - display poe device
+    - display poe interface power
+    aoscx:
+    - show power-over-ethernet brief
+    - show power-over-ethernet {interface}
+    - show environment power-supply
+- id: mac-flap
+  title: MAC flapping / IP ซ้ำ / loop
+  title_en: MAC flapping / duplicate IP / loop
+  summary: ดู log MAC move, ตาราง MAC/ARP และพอร์ตที่ MAC เดียวกันโผล่ (สัญญาณของ loop หรือ IP ซ้ำ)
+  summary_en: MAC-move logs, MAC/ARP tables and ports where the same MAC appears (signs of a loop or duplicate IP)
+  params:
+  - *id001
+  question: มี MAC flapping / IP ซ้ำ ดู log MAC move ว่า MAC ไหนย้ายระหว่างพอร์ตไหน, ตาราง ARP ที่ MAC ของ IP เปลี่ยน, และ STP แล้วบอกว่าเป็น loop, IP ซ้ำ หรือการทำงานปกติของ NIC teaming/VM และจุดที่ต้องไปดู
+  question_en: MAC flapping / duplicate IP. Look at MAC-move logs (which MAC moves between which ports), ARP entries whose MAC changes, and STP, then say whether it's a loop, a duplicate IP or normal NIC teaming/VM behavior, and where to look.
+  causes:
+  - th: 'loop ชั้น L2: MAC เดียวกันสลับไปมาระหว่าง uplink สองเส้นตลอด พร้อม topology change ถี่'
+    en: 'A layer 2 loop: the same MAC bounces between two uplinks constantly with frequent topology changes'
+  - th: server ใช้ NIC teaming / bond แบบ active-active ที่ไม่ได้ทำ LACP หรือ VM ย้ายโฮสต์
+    en: Servers using active-active NIC teaming/bonding without LACP, or VMs migrating between hosts
+  - th: 'IP ซ้ำ: ARP ของ IP เดียวกันสลับไปมาระหว่างสอง MAC (ดูยี่ห้อจาก OUI ของ MAC)'
+    en: 'Duplicate IP: the ARP entry for one IP alternates between two MACs (identify vendors from the MAC OUI)'
+  - th: 'HSRP/VRRP virtual MAC โผล่สองที่: gateway active ทั้งคู่ (ดูอาการ HSRP/VRRP)'
+    en: 'An HSRP/VRRP virtual MAC appears in two places: both gateways active (see the HSRP/VRRP runbook)'
+  refs:
+  - title: 'Cisco: Troubleshoot MAC address flap notifications'
+    url: https://www.cisco.com/c/en/us/support/docs/ip/syslog/221140-troubleshoot-mac-address-flap-notificati.html
+  - title: 'Cisco Community: SW_MATM-4-MACFLAP_NOTIF flapping'
+    url: https://community.cisco.com/t5/switching/error-5w2d-sw-matm-4-macflap-notif-flapping/m-p/3760767
+  search: MAC flapping MACFLAP_NOTIF duplicate IP loop
+  commands:
+    cisco_ios:
+    - show logging | include (MACFLAP|DUPADDR|SPANTREE)
+    - show mac address-table vlan {vlan}
+    - show ip arp
+    - show spanning-tree summary
+    nxos:
+    - show logging logfile | include (MAC_MOVE|DUP)
+    - show mac address-table vlan {vlan}
+    - show ip arp
+    - show mac address-table notification mac-move
+    eos:
+    - show logging | include (MACFLAP|MAC_MOVE)
+    - show mac address-table vlan {vlan}
+    - show ip arp
+    junos:
+    - show ethernet-switching mac-learning-log
+    - show ethernet-switching table
+    - show arp no-resolve
+    huawei:
+    - display mac-address flapping record
+    - display mac-address vlan {vlan}
+    - display arp
+    - display logbuffer | include (FLAP|CONFLICT)
+    comware:
+    - display mac-address mac-move
+    - display mac-address vlan {vlan}
+    - display arp
+    aoscx:
+    - show mac-address-table vlan {vlan}
+    - show arp
+    - show logging -r | include (move|duplicate)
+    fortios:
+    - diagnose ip arp list
+- id: security-updates
+  title: License / signature (FortiGuard, Threat, AV) อัปเดตไม่ได้หรือหมดอายุ
+  title_en: License / signature (FortiGuard, threat, AV) not updating or expired
+  summary: ดูวันหมดอายุ license, เวอร์ชัน signature ล่าสุดที่ได้ และการเชื่อมต่อไปหา update server
+  summary_en: License expiry, latest signature versions received, and connectivity to the update servers
+  params: []
+  question: license หรือ signature ของ security service อัปเดตไม่ได้ ดูวันหมดอายุ, เวอร์ชันและวันที่ของ signature, DNS และการเชื่อมต่อไปหา update server แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: Security service licenses or signatures aren't updating. Look at expiry dates, signature versions and dates, DNS and connectivity to the update servers, then give the most likely cause.
+  causes:
+  - th: DNS ของ firewall ใช้ไม่ได้หรือชี้ DNS ภายในที่ resolve ชื่อ update server ไม่ได้
+    en: The firewall's DNS doesn't work or points to an internal DNS that can't resolve the update servers
+  - th: ออกอินเทอร์เน็ตไม่ได้จากตัวเครื่อง (route จาก management/source interface, proxy) หรือ port 443/8888/53 ถูกบล็อก
+    en: The box itself can't reach the internet (route from the management/source interface, proxy) or ports 443/8888/53 are blocked
+  - th: contract/license หมดอายุ หรือยังไม่ได้ register เครื่องหลังเปลี่ยนเครื่อง (RMA)
+    en: Contract/license expired, or the unit wasn't registered after a replacement (RMA)
+  - th: เวลาเครื่องเพี้ยนทำให้ TLS กับ update server ล้มเหลว
+    en: A wrong clock breaks TLS to the update servers
+  - th: 'FortiGate: บาง database แสดงเวอร์ชัน 0.00000 จนกว่าจะเปิดใช้ฟีเจอร์นั้น (ไม่ใช่ความเสีย)'
+    en: 'FortiGate: some databases show version 0.00000 until the feature is used (not a fault)'
+  refs:
+  - title: 'Fortinet: Verifying and troubleshooting FortiGuard updates status and versions'
+    url: https://community.fortinet.com/fortigate-3/technical-tip-verifying-and-troubleshooting-fortiguard-updates-status-and-versions-96886
+  - title: 'Fortinet: Failure on update or contacting FortiGuard'
+    url: https://community.fortinet.com/fortigate-3/troubleshooting-tip-failure-on-update-or-contact-fortiguard-99713
+  - title: 'Fortinet: Botnet domain database shows version 0.00000'
+    url: https://community.fortinet.com/fortigate-3/technical-tip-botnet-domain-database-shows-version-0-00000-107663
+  search: FortiGuard update failed content update license expired
+  commands:
+    fortios:
+    - diagnose autoupdate versions
+    - diagnose autoupdate status
+    - get system fortiguard-service status
+    - diagnose test update info
+    - show system dns
+    - execute ping update.fortiguard.net
+    panos:
+    - request license info
+    - request content upgrade info
+    - request anti-virus upgrade info
+    - request wildfire upgrade info
+    - show system info
+    asa:
+    - show license all
+    - show activation-key
+    sfos:
+    - system diagnostics show version-info
+    sonicos:
+    - show version
+- id: sdwan
+  title: SD-WAN / health check / เลือกเส้นทางผิด
+  title_en: SD-WAN / health check / wrong path selection
+  summary: ดูสถานะ health check (latency, jitter, loss) ของแต่ละลิงก์ และกฎ SD-WAN ว่าเลือกเส้นไหน
+  summary_en: Health-check state (latency, jitter, loss) per link and which link each SD-WAN rule picks
+  params: []
+  question: SD-WAN เลือกเส้นทางผิดหรือลิงก์ถูกตัดออก ดูผล health check ของแต่ละ member (latency/jitter/loss เทียบ SLA), สถานะ member และกฎที่ match แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: SD-WAN picks the wrong path or a link gets removed. Look at each member's health check (latency/jitter/loss vs SLA), member state and the matching rules, then give the most likely cause.
+  causes:
+  - th: เป้าหมายของ health check (เช่น 8.8.8.8) ตอบช้า/ไม่ตอบ ทำให้ลิงก์ถูกตัดทั้งที่ใช้งานได้
+    en: The health-check target (e.g. 8.8.8.8) is slow or silent, so a working link is removed
+  - th: SLA ตั้งเข้มเกินจริงกับลิงก์ที่มี (latency/jitter threshold)
+    en: SLA thresholds are stricter than the link can meet (latency/jitter)
+  - th: 'ลำดับกฎ SD-WAN: กฎบนกว่า match ก่อน traffic จึงไม่ไปตามกฎที่ตั้งใจ'
+    en: 'SD-WAN rule order: an earlier rule matches first, so traffic doesn''t follow the intended rule'
+  - th: 'FortiOS 6.2 ใช้ชื่อ virtual-wan-link ส่วน 6.4+ เป็น sdwan: ใส่คำสั่งไว้ทั้งสองแบบ'
+    en: FortiOS 6.2 uses 'virtual-wan-link'; 6.4+ uses 'sdwan'. Both commands are included
+  refs: []
+  search: FortiGate SD-WAN health check SLA member dead wrong path
+  commands:
+    fortios:
+    - diagnose sys sdwan health-check
+    - diagnose sys sdwan member
+    - diagnose sys sdwan service
+    - diagnose sys virtual-wan-link health-check
+    - diagnose sys virtual-wan-link member
+    - diagnose sys virtual-wan-link service
+    - get router info routing-table all
+- id: mlag-stack
+  title: vPC / MLAG / VSX / stack / IRF ไม่ปกติ
+  title_en: vPC / MLAG / VSX / stack / IRF unhealthy
+  summary: ดูสถานะ peer-link, keepalive, consistency และสมาชิกของ stack / virtual chassis
+  summary_en: Peer-link, keepalive, consistency and members of the stack / virtual chassis
+  params: []
+  question: multi-chassis (vPC/MLAG/VSX) หรือ stack (IRF/CSS/iStack/StackWise) ไม่ปกติ ดูสถานะ peer-link, keepalive, ผลตรวจ consistency, บทบาท primary/secondary และสมาชิกที่หาย แล้วบอกสาเหตุที่น่าจะเป็นที่สุด
+  question_en: Multi-chassis (vPC/MLAG/VSX) or a stack (IRF/CSS/iStack/StackWise) is unhealthy. Look at peer-link and keepalive state, consistency checks, primary/secondary roles and missing members, then give the most likely cause.
+  causes:
+  - th: 'consistency ไม่ผ่าน (type-1): STP mode, VLAN, MTU หรือ LACP ของสองฝั่งไม่เหมือนกัน ทำให้พอร์ต suspended'
+    en: 'Consistency check fails (type-1): STP mode, VLANs, MTU or LACP differ between peers, suspending ports'
+  - th: peer-keepalive หลุด (ใช้ VRF/management เดียวกับที่ล่ม) ทำให้เสี่ยง split-brain เมื่อ peer-link หลุดด้วย
+    en: Peer-keepalive down (sharing a VRF/management path that failed) risks split-brain if the peer-link also drops
+  - th: peer-link มีแค่เส้นเดียวหรืออยู่บน line card เดียวกัน
+    en: The peer-link is a single link or sits on a single line card
+  - th: 'stack: สาย stack หลวม/เสีย, เวอร์ชันของสมาชิกไม่ตรง หรือ priority/member ID ชนกัน'
+    en: 'Stack: loose/bad stack cable, member version mismatch, or priority/member ID conflicts'
+  - th: 'Arista MLAG: config-sanity ต่าง (VLAN/interface) จะขึ้นใน ''show mlag config-sanity'''
+    en: 'Arista MLAG: config-sanity differences (VLANs/interfaces) appear in ''show mlag config-sanity'''
+  refs:
+  - title: 'Arista ANTA: MLAG tests (config-sanity, status)'
+    url: https://anta.arista.com/stable/api/tests.mlag
+  - title: 'HPE Aruba Airheads: VSX ISL troubleshooting'
+    url: https://airheads.hpe.com/discussion/arubaos-cx-1001-vsx-isl-troubleshooting-on-vsx-versus-mclag-implementation?hlmlt=VT
+  - title: 'HPE Aruba Airheads: VSX config sync missing reference'
+    url: https://airheads.hpe.com/discussion/aruba-8325-vsx-no-mclag-interfaces-sync-configuration-sync-missing-reference?hlmlt=VT
+  search: vPC MLAG VSX peer-link consistency stack split
+  commands:
+    nxos:
+    - show vpc
+    - show vpc brief
+    - show vpc consistency-parameters global
+    - show vpc peer-keepalive
+    - show port-channel summary
+    eos:
+    - show mlag
+    - show mlag config-sanity
+    - show mlag interfaces
+    - show mlag detail
+    aoscx:
+    - show vsx status
+    - show vsx brief
+    - show vsx config-consistency
+    - show vsx ip data-path
+    cisco_ios:
+    - show switch
+    - show switch stack-ports
+    - show switch neighbors
+    - show redundancy
+    - show module
+    huawei:
+    - display stack
+    - display css status
+    - display css channel
+    - display stack topology
+    comware:
+    - display irf
+    - display irf topology
+    - display irf link
+    - display mad verbose
+    junos:
+    - show virtual-chassis
+    - show virtual-chassis vc-port
+    - show iccp
+    - show interfaces mc-ae
+- id: wlc-ap
+  title: AP ไม่ขึ้นกับ controller / client ต่อ Wi-Fi ไม่ได้
+  title_en: AP not joining the controller / clients can't connect to Wi-Fi
+  summary: ดูรายการ AP ที่ join, สถิติการ join ที่ล้ม, client และใบรับรอง/เวลา (Cisco 9800, Huawei AC, FortiGate wireless)
+  summary_en: Joined APs, failed join statistics, clients and certificate/time (Cisco 9800, Huawei AC, FortiGate wireless)
+  params: []
+  question: AP ไม่ขึ้นกับ controller หรือ client ต่อไม่ได้ ดูรายการ AP, เหตุผลที่ join ล้ม, จำนวน client, เวลาเครื่อง และเวอร์ชัน แล้วบอกว่าล้มที่ขั้นไหน (ได้ IP, discovery, DTLS/ใบรับรอง, image download, config) พร้อมสาเหตุที่น่าจะเป็นที่สุด
+  question_en: APs don't join the controller or clients can't connect. Look at the AP list, join failure reasons, client counts, clock and versions, then say which stage fails (IP, discovery, DTLS/certificate, image download, config) and the most likely cause.
+  causes:
+  - th: 'AP ไม่ได้ IP หรือหา controller ไม่เจอ: ไม่มี DHCP option 43 / DNS (CISCO-CAPWAP-CONTROLLER) หรืออยู่คนละ subnet โดยไม่มี discovery'
+    en: 'AP gets no IP or can''t find the controller: no DHCP option 43 / DNS (CISCO-CAPWAP-CONTROLLER), or a different subnet without discovery'
+  - th: 'DTLS / ใบรับรองล้ม: เวลา controller เพี้ยน (ใบรับรองของ AP ''ยังไม่เริ่ม'' หรือหมดอายุ) หรือ AP รุ่นใหม่ใช้ใบรับรองที่ controller เวอร์ชันเก่าไม่รองรับ'
+    en: 'DTLS / certificate failure: controller clock is off (AP cert ''not yet valid'' or expired), or a new AP model uses a cert an older controller doesn''t support'
+  - th: AP รุ่นใหม่ไม่รองรับใน controller เวอร์ชันปัจจุบัน (ต้องอัปเกรด WLC) หรือ image download ค้าง
+    en: The AP model isn't supported by the current controller version (upgrade the WLC), or the image download stalls
+  - th: CAPWAP UDP 5246/5247 หรือ Huawei CAPWAP ถูก firewall/ACL บล็อก หรือ MTU ระหว่าง AP กับ controller ต่ำ
+    en: CAPWAP UDP 5246/5247 (or Huawei CAPWAP) blocked by a firewall/ACL, or low MTU between AP and controller
+  - th: 'เกิน license / AP count ของ controller หรือ AP ไม่ได้อยู่ใน allowlist (Huawei: AP auth mode MAC/SN)'
+    en: Controller license / AP count exceeded, or the AP isn't on the allowlist (Huawei AP auth mode MAC/SN)
+  refs:
+  - title: 'Cisco Community: AP not joining WLC'
+    url: https://community.cisco.com/t5/wireless/ap-not-joining-wlc/m-p/5145310
+  - title: 'Cisco Community: C9105 AP does not join C9800'
+    url: https://community.cisco.com/t5/wireless/c9105-ap-does-not-join-c9800-wlc/td-p/4531624
+  - title: 'NetworkLessons: Cisco WLC debug AP not joining'
+    url: https://networklessons.com/wireless/cisco-wlc-debug-ap-joining
+  - title: 'Huawei: How an AP joins an AC and troubleshooting join failures (V200)'
+    url: https://support.huawei.com/enterprise/en/doc/EDOC1100155253
+  search: AP not joining controller CAPWAP DTLS 9800 AC offline
+  commands:
+    cisco_ios:
+    - show ap summary
+    - show wireless stats ap join summary
+    - show ap join stats summary
+    - show wireless client summary
+    - show clock
+    - show wireless management trustpoint
+    - show version | include (Version|uptime)
+    huawei:
+    - display ap all
+    - display ap online-fail-record all
+    - display ap offline-record all
+    - display station all
+    - display clock
+    - display license
+    fortios:
+    - get wireless-controller wtp-status
+    - diagnose wireless-controller wlac -c wtp
+    - diagnose wireless-controller wlac -c sta
