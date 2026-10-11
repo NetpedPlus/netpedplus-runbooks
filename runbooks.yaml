@@ -11,8 +11,7 @@
 #   เขียนสรุปใหม่ ไม่ได้คัดลอกเนื้อหา, notes = ข้อควรรู้ตามเวอร์ชัน, refs = แหล่งอ้างอิง, search = คำค้นสำหรับปุ่มค้นหาในชุมชน
 # pack_version: วันที่ของชุดคู่มือ (ใช้ตอนอัปเดตชุดคู่มือ)
 
-pack_version: '2026.10.12'
-
+pack_version: 2026.10.13
 runbooks:
 - id: ospf-neighbor
   title: OSPF neighbor ไม่ขึ้น / ค้าง
@@ -48,6 +47,8 @@ runbooks:
     url: https://knowledge.h3c.com/Theme/details/192362
   - title: 'Cisco Community: OSPF adjacency not forming'
     url: https://community.cisco.com/t5/switching/ospf-adjacency-not-forming/m-p/3876483/highlight/true
+  - title: 'Huawei: Checking whether network flappings exist (OSPF last-nbr-down)'
+    url: https://info.support.huawei.com/network/ptmngsys/Web/tsrev_s/en/content/s/15_edesk_high_cpu_usage/edesk_high_cpu_usage_edesk005.html
   search: OSPF neighbor stuck EXSTART EXCHANGE INIT not forming adjacency
   commands:
     cisco_ios:
@@ -80,7 +81,9 @@ runbooks:
     - show configuration protocols ospf
     - show log messages | match OSPF
     huawei:
+    - display ospf peer brief
     - display ospf peer
+    - display ospf peer last-nbr-down
     - display ospf interface
     - display ospf error
     - display interface {interface}
@@ -113,6 +116,11 @@ runbooks:
     panos:
     - show routing protocol ospf neighbor
     - show routing protocol ospf interface
+    aos_switch:
+    - show ip ospf neighbor
+    - show ip ospf interface
+    - show interfaces {interface}
+    - show logging -r
 - id: bgp-neighbor
   title: BGP neighbor ไม่ Established
   title_en: BGP neighbor not Established
@@ -267,8 +275,8 @@ runbooks:
     - display interface brief
     - display interface {interface}
     - display current-configuration interface {interface}
-    - display logbuffer | include (UPDOWN|LINK)
     - display transceiver interface {interface} verbose
+    - display logbuffer | include IFNET
     comware:
     - display interface brief
     - display interface {interface}
@@ -299,6 +307,17 @@ runbooks:
     sonicos:
     - show interfaces
     - show zones
+    aos_switch:
+    - show interfaces brief
+    - show interfaces {interface}
+    - show running-config interface {interface}
+    - show interfaces transceiver {interface} detail
+    - show logging -r
+    f5:
+    - show net interface
+    - show net interface {interface} all-properties
+    - show net trunk
+    - show sys log ltm lines 200
 - id: l2-vlan-stp
   title: VLAN / trunk / STP (ชั้น L2 ไม่ผ่านหรือวน)
   title_en: VLAN / trunk / STP (L2 not passing or looping)
@@ -381,6 +400,12 @@ runbooks:
     - show spanning-tree
     - show interface brief
     - show spanning-tree mst-config
+    aos_switch:
+    - show vlans
+    - show vlans {vlan}
+    - show mac-address vlan {vlan}
+    - show spanning-tree
+    - show interfaces brief
 - id: reachability
   title: ติดต่อปลายทางไม่ได้ (routing / ARP / ping)
   title_en: Destination unreachable (routing / ARP / ping)
@@ -449,6 +474,15 @@ runbooks:
     panos:
     - show routing route
     - show arp all
+    aos_switch:
+    - show ip route
+    - show arp
+    - ping {dst} repetitions 3
+    f5:
+    - list net self
+    - list net route
+    - show net arp
+    - run /util ping -c 3 {dst}
 - id: resources
   title: CPU / Memory สูง หรือเครื่องช้า
   title_en: High CPU / memory or slow device
@@ -484,6 +518,8 @@ runbooks:
     url: https://community.fortinet.com/fortigate-3/troubleshooting-tip-conserve-mode-triggered-by-node-process-memory-leak-in-fortios-v7-4-8-and-v7-6-3-213540
   - title: 'Palo Alto: How to troubleshoot high dataplane CPU'
     url: https://live.paloaltonetworks.com/t5/Featured-Articles/How-to-Troubleshoot-High-Dataplane-CPU/ta-p/73000
+  - title: 'Huawei: Checking whether the CPU usage of each process is normal'
+    url: https://info.support.huawei.com/network/ptmngsys/Web/tsrev_s/en/content/s/15_edesk_high_cpu_usage/edesk_high_cpu_usage_edesk002.html
   search: high CPU memory utilization troubleshooting
   commands:
     cisco_ios:
@@ -512,7 +548,8 @@ runbooks:
     huawei:
     - display cpu-usage
     - display memory-usage
-    - display cpu-usage history
+    - display device
+    - display trapbuffer
     comware:
     - display cpu-usage
     - display memory
@@ -546,6 +583,17 @@ runbooks:
     sonicos:
     - show status
     - show version
+    aos_switch:
+    - show cpu
+    - show system
+    - show system power-supply
+    - show logging -r
+    f5:
+    - show sys cpu
+    - show sys memory
+    - show sys performance all-stats
+    - show sys hardware
+    - show sys log ltm lines 200
 - id: ha-cluster
   title: HA / cluster ไม่ปกติ (failover, sync)
   title_en: HA / cluster unhealthy (failover, sync)
@@ -565,6 +613,8 @@ runbooks:
     en: Repeated failover because a monitored interface / path monitor flaps
   - th: หลังอัปเกรด เครื่องรอง checksum ว่างหรือหน้า HA โหลดไม่ขึ้น (FortiGate VM บางเวอร์ชัน)
     en: After an upgrade the secondary shows an empty checksum or the HA page fails (some FortiGate VM builds)
+  - th: 'F5: เวลาเครื่องทั้งสองต่างกันเกิน threshold (ดู show cm device) หรือ ConfigSync address / network failover ไม่ถึงกัน ทำให้ sync-status เป็น Disconnected / Changes Pending'
+    en: 'F5: device clocks differ beyond the threshold (see show cm device) or ConfigSync address / network failover can''t reach the peer, so sync-status shows Disconnected / Changes Pending'
   refs:
   - title: 'Fortinet: HA out of synchronization'
     url: https://community.fortinet.com/t5/FortiGate/Troubleshooting-Tip-HA-out-of-synchronization/ta-p/273502
@@ -574,6 +624,10 @@ runbooks:
     url: https://community.fortinet.com/t5/FortiGate/HA-Out-of-Sync-due-to-speed-auto-in-default-setting/ta-p/312227
   - title: 'Palo Alto: High Availability configuring and troubleshooting resource list'
     url: https://live.paloaltonetworks.com/t5/Configuration-Articles/High-availability-resource-list/ta-p/55076
+  - title: 'F5 K13946: Troubleshooting ConfigSync and device service clustering issues'
+    url: https://my.f5.com/manage/s/article/K13946
+  - title: 'F5 techdocs: Useful troubleshooting tools (device service clustering)'
+    url: https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/big-ip-device-service-clustering-administration-14-0-0/13.html
   search: HA cluster out of sync failover split brain
   commands:
     fortios:
@@ -600,6 +654,13 @@ runbooks:
     - show chassis cluster statistics
     huawei:
     - display hrp state verbose
+    f5:
+    - show sys failover
+    - show cm failover-status
+    - show cm sync-status
+    - show cm device
+    - show cm traffic-group
+    - show sys log ltm lines 200
 - id: vpn-tunnel
   title: VPN IPsec ไม่ขึ้น / หลุดบ่อย
   title_en: IPsec VPN not coming up / dropping
@@ -703,6 +764,8 @@ runbooks:
     url: https://www3-realm.cisco.com/en/US/tech/tk389/tk621/technologies_tech_note09186a0080094797.shtml
   - title: 'NetworkLessons forum: Spanning tree topology change notification'
     url: https://forum.networklessons.com/t/spanning-tree-topology-change-notification-tcn/1120/37
+  - title: 'Huawei: Checking whether the port continuously receives TC BPDUs'
+    url: https://info.support.huawei.com/network/ptmngsys/Web/tsrev_s/en/content/s/16_edesk_stp_failure/edesk_stp_failure_edesk004.html
   search: spanning tree topology change notification TCN source port flapping
   commands:
     cisco_ios:
@@ -729,7 +792,8 @@ runbooks:
     - display stp topology-change
     - display stp tc-bpdu statistics
     - display stp brief
-    - display logbuffer | include (STP|UPDOWN)
+    - display logbuffer | include MSTP
+    - display logbuffer | include IFNET
     comware:
     - display stp tc
     - display stp history
@@ -738,7 +802,10 @@ runbooks:
     aoscx:
     - show spanning-tree detail
     - show spanning-tree
-    - show logging -r | include (STP|link)
+    - show logging -r
+    aos_switch:
+    - show spanning-tree
+    - show logging -r
 - id: lacp-portchannel
   title: Port-channel / LACP ไม่ bundle หรือ suspended
   title_en: Port-channel / LACP not bundling or suspended
@@ -797,7 +864,7 @@ runbooks:
     huawei:
     - display eth-trunk
     - display interface brief
-    - display logbuffer | include (TRUNK|LACP)
+    - display logbuffer | include LACP
     comware:
     - display link-aggregation summary
     - display link-aggregation verbose
@@ -805,11 +872,20 @@ runbooks:
     aoscx:
     - show lacp interfaces
     - show lacp aggregates
-    - show interface lag
+    - show lacp configuration
+    - show interface brief
     fortios:
     - diagnose netlink aggregate list
     panos:
     - show lacp aggregate-ethernet all
+    aos_switch:
+    - show lacp
+    - show trunks
+    - show interfaces brief
+    f5:
+    - show net trunk
+    - list net trunk
+    - show net interface
 - id: fhrp
   title: 'HSRP / VRRP: gateway สลับไปมา หรือ active ทั้งคู่'
   title_en: HSRP / VRRP gateway flapping or both active
@@ -866,6 +942,8 @@ runbooks:
     - show vrrp
     fortios:
     - get router info vrrp
+    aos_switch:
+    - show vrrp
 - id: dhcp
   title: เครื่องลูกข่ายไม่ได้ IP (DHCP / relay)
   title_en: Clients not getting an IP (DHCP / relay)
@@ -941,6 +1019,9 @@ runbooks:
     - /ip dhcp-server lease print
     - /ip dhcp-server print
     - /ip dhcp-relay print
+    aos_switch:
+    - show dhcp-relay
+    - show dhcp-snooping binding
 - id: dot1x
   title: 802.1X / MAB ยืนยันตัวตนไม่ผ่าน
   title_en: 802.1X / MAB authentication failing
@@ -971,6 +1052,10 @@ runbooks:
     url: https://community.cisco.com/t5/security-knowledge-base/how-to-troubleshoot-ise-failed-authentications-amp/tac-p/3630961
   - title: 'Cisco Community: MAB not working'
     url: https://community.cisco.com/t5/network-access-control/mab-not-working/m-p/5041166
+  - title: 'Huawei: Checking whether the dot1x authentication method is correct'
+    url: https://info.support.huawei.com/network/ptmngsys/Web/tsrev_s/en/content/s/05_edesk_dot1x_authentication_failure/edesk_dot1x_authentication_failure_edesk003.html
+  - title: 'HPE Aruba: AOS-S show port-access authenticator'
+    url: https://arubanetworking.hpe.com/techdocs/AOS-S/16.10/ASG/WC/content/common%20files/sho-por-acc-aut-com.htm
   search: 802.1X MAB authentication failed RADIUS dead
   commands:
     cisco_ios:
@@ -996,8 +1081,9 @@ runbooks:
     huawei:
     - display access-user
     - display dot1x
+    - display aaa configuration
     - display radius-server configuration
-    - display logbuffer | include (DOT1X|AAA|RADIUS)
+    - display logbuffer | include AAA
     comware:
     - display dot1x
     - display dot1x connection
@@ -1006,6 +1092,11 @@ runbooks:
     - show aaa authentication port-access interface all client-status
     - show radius-server detail
     - show port-access role
+    aos_switch:
+    - show port-access authenticator
+    - show port-access authenticator clients
+    - show radius authentication
+    - show logging -r
 - id: fw-policy
   title: Firewall ทิ้ง traffic / NAT ไม่ทำงาน
   title_en: Firewall dropping traffic / NAT not working
@@ -1164,6 +1255,8 @@ runbooks:
     url: https://supportforums.cisco.com/document/75181/digital-optical-monitoring-dom
   - title: 'Cisco Community: Rx power low alarm on 3850'
     url: https://community.cisco.com/t5/optics-and-optical-networking/cisco-3850-gi2-0-4-rx-power-low-alarm/m-p/4555588/highlight/true
+  - title: 'HPE Aruba: AOS-S viewing transceiver information'
+    url: https://arubanetworking.hpe.com/techdocs/AOS-S/16.10/MCG/WC/content/common%20files/vie-inf-abt-tra-cli.htm
   search: SFP rx power low alarm DOM transceiver
   commands:
     cisco_ios:
@@ -1194,6 +1287,9 @@ runbooks:
     - show interface {interface} transceiver detail
     fortios:
     - get system interface transceiver
+    aos_switch:
+    - show interfaces transceiver detail
+    - show interfaces transceiver {interface} detail
 - id: mtu
   title: บางเว็บ/บางแอปใช้ไม่ได้ (MTU / fragmentation / MSS)
   title_en: Some sites/apps fail (MTU / fragmentation / MSS)
@@ -1250,7 +1346,7 @@ runbooks:
     - ping -s 1472 -f -c 2 {dst}
     - ping -s 1372 -f -c 2 {dst}
     - ping -s 1272 -f -c 2 {dst}
-    - display interface {interface} | include MTU
+    - display interface {interface} | include Maximum
     comware:
     - ping -s 1472 -f -c 2 {dst}
     - ping -s 1372 -f -c 2 {dst}
@@ -1332,6 +1428,11 @@ runbooks:
     ros:
     - /system ntp client print
     - /system clock print
+    aos_switch:
+    - show ntp status
+    - show ntp associations
+    - show sntp
+    - show time
 - id: poe
   title: อุปกรณ์ PoE (AP / กล้อง / โทรศัพท์) ไม่ติดหรือดับเป็นช่วง
   title_en: PoE device (AP / camera / phone) not powering or dropping
@@ -1383,6 +1484,10 @@ runbooks:
     - show power-over-ethernet brief
     - show power-over-ethernet {interface}
     - show environment power-supply
+    aos_switch:
+    - show power-over-ethernet brief
+    - show power-over-ethernet brief {interface}
+    - show power-over-ethernet
 - id: mac-flap
   title: MAC flapping / IP ซ้ำ / loop
   title_en: MAC flapping / duplicate IP / loop
@@ -1406,6 +1511,8 @@ runbooks:
     url: https://www.cisco.com/c/en/us/support/docs/ip/syslog/221140-troubleshoot-mac-address-flap-notificati.html
   - title: 'Cisco Community: SW_MATM-4-MACFLAP_NOTIF flapping'
     url: https://community.cisco.com/t5/switching/error-5w2d-sw-matm-4-macflap-notif-flapping/m-p/3760767
+  - title: 'Huawei: Checking whether MAC address flapping occurs'
+    url: https://info.support.huawei.com/network/ptmngsys/Web/tsrev_s/en/content/s/24_edesk_Layer2_MAC_Address_Flapping/edesk_Layer2_MAC_Address_Flapping_edesk001.html
   search: MAC flapping MACFLAP_NOTIF duplicate IP loop
   commands:
     cisco_ios:
@@ -1430,7 +1537,8 @@ runbooks:
     - display mac-address flapping record
     - display mac-address vlan {vlan}
     - display arp
-    - display logbuffer | include (FLAP|CONFLICT)
+    - display trapbuffer
+    - display logbuffer | include MFLP
     comware:
     - display mac-address mac-move
     - display mac-address vlan {vlan}
@@ -1438,9 +1546,13 @@ runbooks:
     aoscx:
     - show mac-address-table vlan {vlan}
     - show arp
-    - show logging -r | include (move|duplicate)
+    - show logging -r
     fortios:
     - diagnose ip arp list
+    aos_switch:
+    - show mac-address vlan {vlan}
+    - show arp
+    - show logging -r
 - id: security-updates
   title: License / signature (FortiGuard, Threat, AV) อัปเดตไม่ได้หรือหมดอายุ
   title_en: License / signature (FortiGuard, threat, AV) not updating or expired
@@ -1489,6 +1601,9 @@ runbooks:
     - system diagnostics show version-info
     sonicos:
     - show version
+    f5:
+    - show sys version
+    - show sys license
 - id: sdwan
   title: SD-WAN / health check / เลือกเส้นทางผิด
   title_en: SD-WAN / health check / wrong path selection
@@ -1543,6 +1658,10 @@ runbooks:
     url: https://airheads.hpe.com/discussion/arubaos-cx-1001-vsx-isl-troubleshooting-on-vsx-versus-mclag-implementation?hlmlt=VT
   - title: 'HPE Aruba Airheads: VSX config sync missing reference'
     url: https://airheads.hpe.com/discussion/aruba-8325-vsx-no-mclag-interfaces-sync-configuration-sync-missing-reference?hlmlt=VT
+  - title: 'HPE Aruba: AOS-CX VSF guide'
+    url: https://arubanetworking.hpe.com/techdocs/AOS-CX/10.16/PDF/vsf.pdf
+  - title: 'HPE Aruba: AOS-S monitoring stacking'
+    url: https://arubanetworking.hpe.com/techdocs/AOS-S/16.11/ATMG/WC/content/common%20files/mon-sta-1.h.htm
   search: vPC MLAG VSX peer-link consistency stack split
   commands:
     nxos:
@@ -1560,7 +1679,10 @@ runbooks:
     - show vsx status
     - show vsx brief
     - show vsx config-consistency
-    - show vsx ip data-path
+    - show vsx config-consistency lacp
+    - show vsf
+    - show vsf topology
+    - show vsf link
     cisco_ios:
     - show switch
     - show switch stack-ports
@@ -1582,6 +1704,12 @@ runbooks:
     - show virtual-chassis vc-port
     - show iccp
     - show interfaces mc-ae
+    aos_switch:
+    - show vsf
+    - show vsf detail
+    - show vsf link detail
+    - show stacking
+    - show stacking detail
 - id: wlc-ap
   title: AP ไม่ขึ้นกับ controller / client ต่อ Wi-Fi ไม่ได้
   title_en: AP not joining the controller / clients can't connect to Wi-Fi
@@ -1610,6 +1738,8 @@ runbooks:
     url: https://networklessons.com/wireless/cisco-wlc-debug-ap-joining
   - title: 'Huawei: How an AP joins an AC and troubleshooting join failures (V200)'
     url: https://support.huawei.com/enterprise/en/doc/EDOC1100155253
+  - title: 'Huawei: Checking the reason why an AP fails to go online'
+    url: https://info.support.huawei.com/network/ptmngsys/Web/tsrev_wlan/en/content/wlan/11_edesk_ap_online_fail/edesk_ap_online_fail_edesk008.html
   search: AP not joining controller CAPWAP DTLS 9800 AC offline
   commands:
     cisco_ios:
@@ -1622,8 +1752,8 @@ runbooks:
     - show version | include (Version|uptime)
     huawei:
     - display ap all
-    - display ap online-fail-record all
     - display ap offline-record all
+    - display ap blacklist
     - display station all
     - display clock
     - display license
@@ -1631,3 +1761,86 @@ runbooks:
     - get wireless-controller wtp-status
     - diagnose wireless-controller wlac -c wtp
     - diagnose wireless-controller wlac -c sta
+- id: f5-lb-service
+  title: 'F5: Virtual server / pool member down (health monitor)'
+  title_en: 'F5: virtual server / pool member down (health monitor)'
+  summary: ดูสถานะ virtual server, pool, member, node, log LTM และ ping จาก BIG-IP ไปที่ member
+  summary_en: Virtual server, pool, member and node status, the LTM log and a ping from the BIG-IP to the member
+  params:
+  - key: pool
+    label: ชื่อ pool (ไม่บังคับ)
+    kind: interface
+    hint: เช่น pool_web หรือ /Common/pool_web
+  - key: dst
+    label: IP ของ pool member ที่ down (ไม่บังคับ)
+    kind: ip
+    hint: เช่น 10.10.20.11
+  question: Virtual server หรือ pool member บน F5 ไม่ขึ้น ดูสถานะ (availability / reason) ของ virtual, pool, member และ node, monitor ที่ใช้, log LTM (monitor status down) และผล ping แล้วบอกว่าล้มเพราะ monitor ตอบไม่ตรง, เส้นทาง/SNAT, หรือ member ถูกปิดเอง พร้อมคำสั่งยืนยันขั้นต่อไป
+  question_en: A virtual server or pool member on the F5 is down. Look at the availability/reason of the virtual, pool, members and nodes, the monitor in use, the LTM log (monitor status down) and the ping result, then say whether it fails because of the monitor response, routing/SNAT, or a manually disabled member, with the next confirming command.
+  causes:
+  - th: 'monitor ตอบไม่ตรง: HTTP monitor ส่ง request ที่ server ไม่ตอบ 200 (ต้องใส่ Host header / HTTP/1.1, server redirect 301/302) หรือ receive string ไม่ตรงกับหน้าเว็บ'
+    en: 'Monitor mismatch: the HTTP monitor''s request doesn''t get a 200 (needs a Host header / HTTP/1.1, server redirects 301/302) or the receive string doesn''t match the page'
+  - th: 'BIG-IP ไปไม่ถึง member: ไม่มี self IP / route ไปวงของ server หรือ firewall ของ server บล็อก self IP ที่ส่ง monitor'
+    en: 'BIG-IP can''t reach the member: no self IP / route to the server subnet, or the server firewall blocks the self IP that sends monitors'
+  - th: traffic ขากลับไม่ผ่าน BIG-IP (ไม่ได้ตั้ง SNAT / Automap และ default gateway ของ server ไม่ใช่ BIG-IP) ทำให้ VS ขึ้นแต่ใช้งานไม่ได้
+    en: Return traffic bypasses the BIG-IP (no SNAT / Automap and the server's gateway isn't the BIG-IP), so the VS is up but doesn't work
+  - th: 'HTTPS monitor / server-ssl: server ไม่รองรับ TLS version หรือ cipher ที่ BIG-IP ใช้'
+    en: 'HTTPS monitor / server-ssl: the server doesn''t support the TLS version or cipher the BIG-IP uses'
+  - th: member หรือ node ถูกปิดเอง (Disabled / Forced Offline) หรือเกิน connection limit ทำให้ VS ไม่มี member ที่ใช้งานได้
+    en: Member or node manually disabled / forced offline, or connection limit reached, leaving the VS with no available members
+  notes:
+  - th: คำสั่ง ping ใช้ run /util ping จาก tmsh (จำกัด 3 ครั้ง) ออกจาก route domain 0 ถ้า pool อยู่ใน route domain อื่นผลอาจไม่ตรง
+    en: The ping uses run /util ping from tmsh (limited to 3 packets) from route domain 0; results may differ if the pool lives in another route domain
+  refs:
+  - title: 'F5 K45821585: Pool member with HTTP monitor remains unchecked'
+    url: https://my.f5.com/manage/s/article/K45821585
+  - title: 'F5 K000159830: BIG-IP communication options with pool members'
+    url: https://my.f5.com/manage/s/article/K000159830
+  - title: 'F5 tmsh reference: ltm pool'
+    url: https://clouddocs.f5.com/cli/tmsh-reference/v16/modules/ltm/ltm_pool.html
+  - title: 'DevCentral: tmsh command to see the status of pool members'
+    url: https://community.f5.com/discussions/technicalforum/tmsh-command-to-know-the-status-of-the-nodes-in-the-pool/49122
+  search: F5 BIG-IP pool member down monitor offline
+  commands:
+    f5:
+    - show ltm virtual
+    - show ltm pool
+    - show ltm pool {pool} members
+    - list ltm pool {pool}
+    - show ltm node
+    - show sys log ltm lines 200
+    - run /util ping -c 3 {dst}
+- id: f5-ssl-cert
+  title: 'F5: ใบรับรอง SSL ใกล้หมดอายุ / SSL handshake ล้ม'
+  title_en: 'F5: SSL certificate expiring / SSL handshake failures'
+  summary: ดูวันหมดอายุของใบรับรองทุกใบ, สถิติ client-ssl profile และ log LTM
+  summary_en: Expiry dates of all certificates, client-ssl profile statistics and the LTM log
+  params: []
+  question: ผู้ใช้เข้าเว็บที่ผ่าน F5 แล้วขึ้นใบรับรองไม่ถูกต้องหรือ handshake ล้ม ดูวันหมดอายุของใบรับรอง สถิติ handshake ของ client-ssl profile และ log แล้วบอกใบรับรองที่หมดหรือใกล้หมด (ภายใน 30 วัน), profile ที่มี handshake failure และสาเหตุที่น่าจะเป็น
+  question_en: Users reaching a site through the F5 get certificate errors or handshake failures. Check certificate expiry dates, client-ssl profile handshake statistics and the log, then list certificates expired or expiring within 30 days, profiles with handshake failures, and the likely cause.
+  causes:
+  - th: ใบรับรองหมดอายุหรือเปลี่ยนใบใหม่แล้วแต่ยังไม่ได้ผูกกับ client-ssl profile ที่ VS ใช้
+    en: The certificate expired, or a renewed one was imported but not attached to the client-ssl profile the VS uses
+  - th: ไม่ได้ใส่ intermediate chain ใน profile ทำให้บาง browser / มือถือไม่เชื่อใบรับรอง
+    en: The intermediate chain isn't set in the profile, so some browsers / phones don't trust the certificate
+  - th: TLS version หรือ cipher ที่ profile อนุญาตไม่ตรงกับ client (เช่น client เก่าที่ใช้ TLS 1.0/1.1 หรือปิด cipher ที่ client ต้องใช้)
+    en: The profile's allowed TLS versions or ciphers don't match the client (e.g. old clients on TLS 1.0/1.1, or a required cipher disabled)
+  - th: 'SNI: VS มีหลาย profile แต่ไม่ได้ตั้ง server name / default SNI ทำให้ส่งใบรับรองผิดชื่อ'
+    en: 'SNI: the VS has several profiles without server names / a default SNI profile, so the wrong certificate is presented'
+  refs:
+  - title: 'DevCentral: SSL cert list via CLI (expiration-string)'
+    url: https://community.f5.com/discussions/technicalforum/ssl-cert-list-via-cli/267459
+  - title: 'F5 tmsh reference: sys file ssl-cert'
+    url: https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/sys/sys_file_ssl-cert.html
+  - title: 'F5 tmsh reference: ltm profile client-ssl'
+    url: https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_profile_client-ssl.html
+  - title: 'DevCentral: SSL profile handshake failure statistics'
+    url: https://community.f5.com/discussions/technicalforum/ssl-profile-handshakefailure-statistics-such-fun-must-look-so-much-question/225812
+  search: F5 BIG-IP SSL handshake failure client-ssl certificate chain expired
+  commands:
+    f5:
+    - list sys file ssl-cert expiration-string
+    - show ltm profile client-ssl
+    - list ltm profile client-ssl
+    - show ltm virtual
+    - show sys log ltm lines 200
