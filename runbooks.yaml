@@ -11,7 +11,7 @@
 #   เขียนสรุปใหม่ ไม่ได้คัดลอกเนื้อหา, notes = ข้อควรรู้ตามเวอร์ชัน, refs = แหล่งอ้างอิง, search = คำค้นสำหรับปุ่มค้นหาในชุมชน
 # pack_version: วันที่ของชุดคู่มือ (ใช้ตอนอัปเดตชุดคู่มือ)
 
-pack_version: 2026.10.13
+pack_version: 2026.10.14
 runbooks:
 - id: ospf-neighbor
   title: OSPF neighbor ไม่ขึ้น / ค้าง
@@ -318,6 +318,11 @@ runbooks:
     - show net interface {interface} all-properties
     - show net trunk
     - show sys log ltm lines 200
+    aos8:
+    - show port stats
+    - show interface {interface}
+    - show ip interface brief
+    - show log system 100
 - id: l2-vlan-stp
   title: VLAN / trunk / STP (ชั้น L2 ไม่ผ่านหรือวน)
   title_en: VLAN / trunk / STP (L2 not passing or looping)
@@ -406,6 +411,9 @@ runbooks:
     - show mac-address vlan {vlan}
     - show spanning-tree
     - show interfaces brief
+    aos8:
+    - show vlan
+    - show vlan status
 - id: reachability
   title: ติดต่อปลายทางไม่ได้ (routing / ARP / ping)
   title_en: Destination unreachable (routing / ARP / ping)
@@ -483,6 +491,10 @@ runbooks:
     - list net route
     - show net arp
     - run /util ping -c 3 {dst}
+    aos8:
+    - show ip route
+    - show arp
+    - show ip interface brief
 - id: resources
   title: CPU / Memory สูง หรือเครื่องช้า
   title_en: High CPU / memory or slow device
@@ -594,6 +606,12 @@ runbooks:
     - show sys performance all-stats
     - show sys hardware
     - show sys log ltm lines 200
+    aos8:
+    - show cpuload
+    - show memory
+    - show storage
+    - show processes sort-by cpu
+    - show log system 100
 - id: ha-cluster
   title: HA / cluster ไม่ปกติ (failover, sync)
   title_en: HA / cluster unhealthy (failover, sync)
@@ -661,6 +679,11 @@ runbooks:
     - show cm device
     - show cm traffic-group
     - show sys log ltm lines 200
+    aos8:
+    - show lc-cluster group-membership
+    - show vrrp
+    - show switches
+    - show log system 100
 - id: vpn-tunnel
   title: VPN IPsec ไม่ขึ้น / หลุดบ่อย
   title_en: IPsec VPN not coming up / dropping
@@ -1433,6 +1456,9 @@ runbooks:
     - show ntp associations
     - show sntp
     - show time
+    aos8:
+    - show clock
+    - show ntp servers
 - id: poe
   title: อุปกรณ์ PoE (AP / กล้อง / โทรศัพท์) ไม่ติดหรือดับเป็นช่วง
   title_en: PoE device (AP / camera / phone) not powering or dropping
@@ -1579,6 +1605,8 @@ runbooks:
     url: https://community.fortinet.com/fortigate-3/troubleshooting-tip-failure-on-update-or-contact-fortiguard-99713
   - title: 'Fortinet: Botnet domain database shows version 0.00000'
     url: https://community.fortinet.com/fortigate-3/technical-tip-botnet-domain-database-shows-version-0-00000-107663
+  - title: 'Aruba AOS-8 CLI: show license summary'
+    url: https://arubanetworking.hpe.com/techdocs/CLI-Bank/Content/aos8/sh-lic-sum.htm
   search: FortiGuard update failed content update license expired
   commands:
     fortios:
@@ -1604,6 +1632,9 @@ runbooks:
     f5:
     - show sys version
     - show sys license
+    aos8:
+    - show version
+    - show license summary
 - id: sdwan
   title: SD-WAN / health check / เลือกเส้นทางผิด
   title_en: SD-WAN / health check / wrong path selection
@@ -1713,8 +1744,8 @@ runbooks:
 - id: wlc-ap
   title: AP ไม่ขึ้นกับ controller / client ต่อ Wi-Fi ไม่ได้
   title_en: AP not joining the controller / clients can't connect to Wi-Fi
-  summary: ดูรายการ AP ที่ join, สถิติการ join ที่ล้ม, client และใบรับรอง/เวลา (Cisco 9800, Huawei AC, FortiGate wireless)
-  summary_en: Joined APs, failed join statistics, clients and certificate/time (Cisco 9800, Huawei AC, FortiGate wireless)
+  summary: ดูรายการ AP ที่ join, สถิติการ join ที่ล้ม, client และใบรับรอง/เวลา (Cisco 9800, Huawei AC, Aruba Mobility Controller, FortiGate wireless)
+  summary_en: Joined APs, failed join statistics, clients and certificate/time (Cisco 9800, Huawei AC, Aruba Mobility Controller, FortiGate wireless)
   params: []
   question: AP ไม่ขึ้นกับ controller หรือ client ต่อไม่ได้ ดูรายการ AP, เหตุผลที่ join ล้ม, จำนวน client, เวลาเครื่อง และเวอร์ชัน แล้วบอกว่าล้มที่ขั้นไหน (ได้ IP, discovery, DTLS/ใบรับรอง, image download, config) พร้อมสาเหตุที่น่าจะเป็นที่สุด
   question_en: APs don't join the controller or clients can't connect. Look at the AP list, join failure reasons, client counts, clock and versions, then say which stage fails (IP, discovery, DTLS/certificate, image download, config) and the most likely cause.
@@ -1729,6 +1760,10 @@ runbooks:
     en: CAPWAP UDP 5246/5247 (or Huawei CAPWAP) blocked by a firewall/ACL, or low MTU between AP and controller
   - th: 'เกิน license / AP count ของ controller หรือ AP ไม่ได้อยู่ใน allowlist (Huawei: AP auth mode MAC/SN)'
     en: Controller license / AP count exceeded, or the AP isn't on the allowlist (Huawei AP auth mode MAC/SN)
+  - th: 'Aruba: ดูคอลัมน์ Flags ใน show ap database long (ความหมายพิมพ์ไว้ท้ายตาราง) ที่เจอบ่อย: U = Unprovisioned, G = No such group (ชื่อ AP group ไม่มีใน controller), D = Dirty or no config, I = Inactive, L = Unlicensed, E = Regulatory Domain Mismatch, N = Duplicate name; AP ที่ไม่อยู่ใน show ap active ยังไม่ได้ทำงานเป็น AP'
+    en: 'Aruba: check the Flags column in show ap database long (legend printed under the table); common ones: U = Unprovisioned, G = No such group, D = Dirty or no config, I = Inactive, L = Unlicensed, E = Regulatory Domain Mismatch, N = Duplicate name; an AP missing from show ap active isn''t serving yet'
+  - th: 'Aruba: version ของ AP กับ controller ไม่ตรงกัน (ดู show ap image version) หรือ cluster ไม่ครบ (show lc-cluster group-membership) ทำให้ AP ย้ายไป controller อื่นไม่ได้'
+    en: 'Aruba: AP and controller image versions differ (see show ap image version) or the cluster is incomplete (show lc-cluster group-membership), so APs can''t fail over'
   refs:
   - title: 'Cisco Community: AP not joining WLC'
     url: https://community.cisco.com/t5/wireless/ap-not-joining-wlc/m-p/5145310
@@ -1740,6 +1775,10 @@ runbooks:
     url: https://support.huawei.com/enterprise/en/doc/EDOC1100155253
   - title: 'Huawei: Checking the reason why an AP fails to go online'
     url: https://info.support.huawei.com/network/ptmngsys/Web/tsrev_wlan/en/content/wlan/11_edesk_ap_online_fail/edesk_ap_online_fail_edesk008.html
+  - title: 'Aruba: Process and Command Reference Guide (ArubaOS 8)'
+    url: https://higherlogicdownload.s3.amazonaws.com/HPE/MigratedAttachments/7F833180-B5E5-4A39-BBFE-7BC1813F8C89-1-Process%20and%20Command%20Reference%20Guide.pdf
+  - title: 'Aruba AOS-8 CLI: show lc-cluster'
+    url: https://arubanetworking.hpe.com/techdocs/CLI-Bank/Content/aos8/sh-lc-cluster.htm
   search: AP not joining controller CAPWAP DTLS 9800 AC offline
   commands:
     cisco_ios:
@@ -1761,6 +1800,13 @@ runbooks:
     - get wireless-controller wtp-status
     - diagnose wireless-controller wlac -c wtp
     - diagnose wireless-controller wlac -c sta
+    aos8:
+    - show ap database long
+    - show ap active
+    - show ap image version
+    - show user-table
+    - show clock
+    - show log system 100
 - id: f5-lb-service
   title: 'F5: Virtual server / pool member down (health monitor)'
   title_en: 'F5: virtual server / pool member down (health monitor)'
